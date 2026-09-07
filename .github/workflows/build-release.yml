@@ -1,0 +1,131 @@
+name: Build and release CamerAim
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CAMERAIM_VERSION: 2.1.0
+  UGS_VERSION: 2.1.6
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out CamerAim
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17 and Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: ugs-camera-monitor/pom.xml
+
+      - name: Prepare UGS 2.1.6 build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .upstream
+          git clone --depth 1 --branch "v${UGS_VERSION}" --filter=blob:none \
+            https://github.com/winder/Universal-G-Code-Sender.git .upstream/ugs
+          curl --fail --location --retry 3 \
+            "https://github.com/winder/Universal-G-Code-Sender/releases/download/v${UGS_VERSION}/ugs-platform-app-${UGS_VERSION}.zip" \
+            --output ".upstream/ugs-platform-app-${UGS_VERSION}.zip"
+          unzip -q ".upstream/ugs-platform-app-${UGS_VERSION}.zip" \
+            -d ".upstream/ugs-platform-app-${UGS_VERSION}"
+
+          core_jar=".upstream/ugs-platform-app-${UGS_VERSION}/ugsplatform/ugsplatform/modules/ext/com.willwinder.ugs-platform-ugslib/com-willwinder-universalgcodesender/ugs-core.jar"
+          ugslib_jar=".upstream/ugs-platform-app-${UGS_VERSION}/ugsplatform/ugsplatform/modules/com-willwinder-ugs-platform-ugslib.jar"
+          test -f "$core_jar"
+          test -f "$ugslib_jar"
+
+          mvn --batch-mode install:install-file \
+            -Dfile="$core_jar" \
+            -DgroupId=com.willwinder.universalgcodesender \
+            -DartifactId=ugs-core \
+            -Dversion=2.0-SNAPSHOT \
+            -Dpackaging=jar \
+            -DgeneratePom=true
+          mvn --batch-mode install:install-file \
+            -Dfile="$ugslib_jar" \
+            -DgroupId=com.willwinder \
+            -DartifactId=ugs-platform-ugslib \
+            -Dversion=2.0-SNAPSHOT \
+            -Dpackaging=jar \
+            -DgeneratePom=true
+
+      - name: Build and test
+        shell: bash
+        run: mvn --batch-mode -f ugs-camera-monitor/pom.xml clean package
+
+      - name: Package downloads and update catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          internal_name="ugs-platform-plugin-camera-monitor-${CAMERAIM_VERSION}.nbm"
+          built_nbm="ugs-camera-monitor/target/nbm/${internal_name}"
+          release_nbm="G-BASHWARE-CamerAim-for-UGS-${UGS_VERSION}.nbm"
+
+          mkdir -p dist package "ugs-camera-monitor/target/netbeans_site"
+          cp "$built_nbm" "dist/$release_nbm"
+          cp "$built_nbm" "ugs-camera-monitor/target/$internal_name"
+          cp "dist/$release_nbm" package/
+          cp docs/INSTALL.md package/
+          (cd package && zip -q -r "../dist/G-BASHWARE-CamerAim-${CAMERAIM_VERSION}_UGS-${UGS_VERSION}_Windows.zip" .)
+          (cd dist && sha256sum *.nbm *.zip > SHA256SUMS.txt)
+
+          mvn --batch-mode -f ugs-camera-monitor/pom.xml nbm:autoupdate \
+            -Dmaven.nbm.customDistBase=https://raw.githubusercontent.com/bash-ware/G-BASHWARE-CamerAim/update-center \
+            -Dmaven.nbm.updatesitexml=updates.xml
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: G-BASHWARE-CamerAim-${{ env.CAMERAIM_VERSION }}
+          path: |
+            dist/*
+            ugs-camera-monitor/target/netbeans_site/*
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "G-BASHWARE CamerAim ${CAMERAIM_VERSION}" \
+            --generate-notes
+
+      - name: Publish NetBeans update center
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_dir="$(mktemp -d)"
+          cp ugs-camera-monitor/target/netbeans_site/* "$publish_dir/"
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin update-center || true
+          if git show-ref --verify --quiet refs/remotes/origin/update-center; then
+            git worktree add -B update-center "$publish_dir/repo" origin/update-center
+          else
+            git worktree add --detach "$publish_dir/repo"
+            git -C "$publish_dir/repo" switch --orphan update-center
+            git -C "$publish_dir/repo" rm -rf .
+          fi
+          cp "$publish_dir"/*.nbm "$publish_dir"/*.xml "$publish_dir"/*.gz "$publish_dir/repo/"
+          git -C "$publish_dir/repo" add .
+          git -C "$publish_dir/repo" commit -m "Publish CamerAim ${CAMERAIM_VERSION} update center"
+          git -C "$publish_dir/repo" push --force origin HEAD:update-center

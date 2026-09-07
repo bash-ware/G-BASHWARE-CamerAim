@@ -1,0 +1,6 @@
+Manifest-Version: 1.0
+OpenIDE-Module-Localizing-Bundle: com/bashworks/ugs/camera/Bundle.properties
+OpenIDE-Module-Layer: com/bashworks/ugs/camera/layer.xml
+OpenIDE-Module-Java-Dependencies: Java > 11
+OpenIDE-Module-Specification-Version: ${ugs.modules.specification.version}
+AutoUpdate-Essential-Module: false
