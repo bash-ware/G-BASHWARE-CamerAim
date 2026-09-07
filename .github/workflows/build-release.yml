@@ -20,12 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out CamerAim
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up Java 17 and Maven cache
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -90,7 +90,7 @@ jobs:
             -Dmaven.nbm.updatesitexml=updates.xml
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: G-BASHWARE-CamerAim-${{ env.CAMERAIM_VERSION }}
           path: |
@@ -123,7 +123,7 @@ jobs:
           else
             git worktree add --detach "$publish_dir/repo"
             git -C "$publish_dir/repo" switch --orphan update-center
-            git -C "$publish_dir/repo" rm -rf .
+            git -C "$publish_dir/repo" rm -rf . || true
           fi
           cp "$publish_dir"/*.nbm "$publish_dir"/*.xml "$publish_dir"/*.gz "$publish_dir/repo/"
           git -C "$publish_dir/repo" add .
