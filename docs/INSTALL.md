@@ -21,14 +21,15 @@ Installing this branded release over the earlier Camera Monitor prototype update
 ## Verify the camera
 
 1. Select the USB camera.
-2. Select a resolution. Modes marked **additional mode** are candidates because the legacy UVC bridge cannot enumerate every MJPG mode.
-3. Click **Start camera**. CamerAim retries the exact selection and reports an error if the camera substitutes another size; it never silently falls back to 640 × 480.
-4. Set display rotation to match the machine axes.
-5. Use 2× or 3× zoom for fine alignment. Zoom and rotation affect only the view; the crosshair remains at the optical center.
+2. Select one of the hardware-validated resolutions shown for the camera.
+3. Select a **Preview FPS** limit: 5, 10, 15, 20, 25, or 30.
+4. Click **Start camera**. CamerAim verifies the exact resolution and never silently substitutes another size.
+5. Set display rotation to match the machine axes.
+6. Use 2× or 3× zoom for fine alignment. Zoom and rotation affect only the view; the crosshair remains at the optical center with a 3 × 3 pixel opening.
 
 ### Resolution notes
 
-Camera firmware decides which width, height, pixel format, and frame-rate combinations are valid. A mode appearing in CamerAim's list does not guarantee that a particular camera accepts it. The tested `5MP Camera` module repeatedly returned exact frames at 1280 × 720, 1920 × 1080, 2560 × 1920, and 2592 × 1944. It substituted a different size for 2048 × 1536 and 2560 × 1440, so CamerAim rejected those two selections.
+The tested `5MP Camera` profile contains only modes that returned exact frames through CamerAim: 640 × 480, 800 × 600, 1280 × 720, 1280 × 960, 1920 × 1080, 2560 × 1920, and 2592 × 1944. The plugin requests the selected FPS from the UVC driver and also applies it as a preview limit, so reducing the setting reduces frame processing even when the driver ignores the requested rate.
 
 If the camera opens once and later starts fail, check whether antivirus or endpoint security is blocking Java or UGS from accessing the camera. During development, Bitdefender produced exactly that behavior until camera access was allowed.
 ## Determine the X/Y offset

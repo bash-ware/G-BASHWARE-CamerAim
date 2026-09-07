@@ -11,11 +11,11 @@ The current release targets **UGS Platform 2.1.6** and **Java 17 or newer**. The
 ## Features
 
 - USB/UVC camera discovery and live preview
-- Camera modes up to 2592 × 1944 for 5 MP cameras
-- Deterministic 30 fps UVC negotiation with exact output-resolution verification
+- Hardware-validated `5MP Camera` modes from 640 × 480 through 2592 × 1944
+- Selectable 5, 10, 15, 20, 25, and 30 FPS preview limits with exact output-resolution verification
 - Centered 1×, 2×, and 3× digital zoom
 - 0°, 90°, 180°, and 270° clockwise display rotation
-- Crosshair with one uncovered source pixel at its exact center
+- Crosshair with an uncovered 3 × 3 pixel opening at its exact center
 - Persistent X/Y camera-to-tool offset, units, and jog feed
 - Exact relative XY movement from the crosshair target to the tool
 - Live machine coordinates and calculated tool target

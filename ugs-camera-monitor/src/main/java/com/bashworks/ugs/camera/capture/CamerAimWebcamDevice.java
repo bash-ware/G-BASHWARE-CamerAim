@@ -48,6 +48,7 @@ final class CamerAimWebcamDevice implements WebcamDevice, WebcamDevice.FPSSource
     private boolean disposed;
     private long previousFrameNanos;
     private double fps;
+    private double requestedFps = 30.0;
 
     CamerAimWebcamDevice(Device nativeDevice) {
         this.nativeDevice = nativeDevice;
@@ -74,6 +75,12 @@ final class CamerAimWebcamDevice implements WebcamDevice, WebcamDevice.FPSSource
         if (requested == null) throw new IllegalArgumentException("Resolution cannot be null");
         if (open) throw new IllegalStateException("Cannot change resolution while the camera is open");
         size = new Dimension(requested);
+    }
+
+    synchronized void setRequestedFps(double requestedFps) {
+        if (requestedFps <= 0.0) throw new IllegalArgumentException("Frame rate must be positive");
+        if (open) throw new IllegalStateException("Cannot change frame rate while the camera is open");
+        this.requestedFps = requestedFps;
     }
 
     @Override
@@ -111,7 +118,7 @@ final class CamerAimWebcamDevice implements WebcamDevice, WebcamDevice.FPSSource
         boolean started = candidate.startSession(
                 size.width,
                 size.height,
-                REQUESTED_FPS,
+                requestedFps,
                 Pointer.pointerTo(nativeDevice));
         if (!started) {
             throw new WebcamException("Cannot start the native camera grabber at " + label(size));

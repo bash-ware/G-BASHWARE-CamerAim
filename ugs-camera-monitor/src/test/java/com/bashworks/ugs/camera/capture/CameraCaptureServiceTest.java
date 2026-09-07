@@ -4,10 +4,17 @@ import org.junit.Test;
 
 import java.awt.Dimension;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class CameraCaptureServiceTest {
+    @Test
+    public void calculatesARealPreviewFrameRateLimit() {
+        assertEquals(50_000_000L, CameraCaptureService.remainingDelayNanos(5.0, 150_000_000L));
+        assertEquals(0L, CameraCaptureService.remainingDelayNanos(10.0, 150_000_000L));
+    }
+
     @Test
     public void acceptsOnlyTheExactRequestedResolution() {
         assertTrue(CameraCaptureService.sameSize(

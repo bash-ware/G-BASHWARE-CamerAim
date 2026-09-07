@@ -44,7 +44,15 @@ public final class CameraCaptureService implements AutoCloseable {
         scanner.start();
     }
 
-    public synchronized void start(CameraDevice device, Dimension size, Consumer<BufferedImage> onFrame) {
+    public void start(CameraDevice device, Dimension size, Consumer<BufferedImage> onFrame) {
+        start(device, size, device.preferredFrameRate(), onFrame);
+    }
+
+    public synchronized void start(
+            CameraDevice device,
+            Dimension size,
+            double frameRate,
+            Consumer<BufferedImage> onFrame) {
         Thread previous = captureThread;
         running = false;
         generation.incrementAndGet();
@@ -52,7 +60,7 @@ public final class CameraCaptureService implements AutoCloseable {
         long activeGeneration = generation.incrementAndGet();
         running = true;
         Thread next = new Thread(
-                () -> startAfterPrevious(previous, activeGeneration, device, size, onFrame),
+                () -> startAfterPrevious(previous, activeGeneration, device, size, frameRate, onFrame),
                 "cameraim-camera-capture-" + activeGeneration);
         next.setDaemon(true);
         captureThread = next;
@@ -64,6 +72,7 @@ public final class CameraCaptureService implements AutoCloseable {
             long activeGeneration,
             CameraDevice device,
             Dimension size,
+            double frameRate,
             Consumer<BufferedImage> onFrame) {
         try {
             if (previous != null && previous != Thread.currentThread()) {
@@ -74,7 +83,7 @@ public final class CameraCaptureService implements AutoCloseable {
                 Thread.sleep(CAMERA_RELEASE_DELAY_MS);
             }
             if (generation.get() != activeGeneration) return;
-            captureLoop(activeGeneration, device, size, onFrame);
+            captureLoop(activeGeneration, device, size, frameRate, onFrame);
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             finishSession(activeGeneration, false);
@@ -85,17 +94,25 @@ public final class CameraCaptureService implements AutoCloseable {
         }
     }
 
-    private void captureLoop(long activeGeneration, CameraDevice device, Dimension size, Consumer<BufferedImage> onFrame) {
+    private void captureLoop(
+            long activeGeneration,
+            CameraDevice device,
+            Dimension size,
+            double frameRate,
+            Consumer<BufferedImage> onFrame) {
         Webcam webcam = device.webcam();
         boolean failed = false;
         try {
-            notifyStatus("Starting camera at " + label(size) + "…");
+            device.setFrameRate(frameRate);
+            notifyStatus("Starting camera at " + label(size) + " @ " + fpsLabel(frameRate) + "…");
             Dimension activeSize = openCamera(webcam, size);
-            notifyStatus("Camera active: " + label(activeSize));
+            notifyStatus("Camera active: " + label(activeSize) + " @ max " + fpsLabel(frameRate));
             while (running && generation.get() == activeGeneration && !Thread.currentThread().isInterrupted()) {
+                long captureStarted = System.nanoTime();
                 BufferedImage image = webcam.getImage();
                 if (image != null) onFrame.accept(image);
-                Thread.sleep(10L);
+                long captureNanos = System.nanoTime() - captureStarted;
+                sleepNanos(remainingDelayNanos(frameRate, captureNanos));
             }
         } catch (InterruptedException ignored) {
             Thread.currentThread().interrupt();
@@ -131,7 +148,7 @@ public final class CameraCaptureService implements AutoCloseable {
 
         throw new IllegalStateException(
                 "Selected mode " + label(requested)
-                        + " could not be confirmed at 30 fps; no fallback resolution was applied",
+                        + " could not be confirmed at the selected frame rate; no fallback resolution was applied",
                 lastError);
     }
 
@@ -145,12 +162,31 @@ public final class CameraCaptureService implements AutoCloseable {
         return actual != null ? actual : size;
     }
 
+    static long remainingDelayNanos(double frameRate, long captureNanos) {
+        if (frameRate <= 0.0) throw new IllegalArgumentException("Frame rate must be positive");
+        long intervalNanos = Math.max(1L, Math.round(1_000_000_000.0 / frameRate));
+        return Math.max(0L, intervalNanos - Math.max(0L, captureNanos));
+    }
+
+    private static void sleepNanos(long delayNanos) throws InterruptedException {
+        if (delayNanos <= 0L) return;
+        long millis = delayNanos / 1_000_000L;
+        int nanos = (int) (delayNanos % 1_000_000L);
+        Thread.sleep(millis, nanos);
+    }
+
     static boolean sameSize(Dimension expected, Dimension actual) {
         return expected == null || expected.equals(actual);
     }
 
     private static String label(Dimension size) {
         return size == null ? "default" : size.width + " × " + size.height;
+    }
+
+    private static String fpsLabel(double frameRate) {
+        return Math.rint(frameRate) == frameRate
+                ? Integer.toString((int) frameRate) + " fps"
+                : Double.toString(frameRate) + " fps";
     }
 
     private static String message(Throwable error) {

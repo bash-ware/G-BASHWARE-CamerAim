@@ -37,6 +37,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private static final String PREF_FEED = "offset.feed";
     private static final String PREF_ZOOM = "camera.zoom";
     private static final String PREF_ROTATION = "camera.rotation";
+    private static final String PREF_FPS = "camera.fps";
 
     private final MachineGateway machine;
     private final CameraCaptureService camera = new CameraCaptureService();
@@ -44,6 +45,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private final CameraImagePanel imagePanel = new CameraImagePanel();
     private final JComboBox<CameraDevice> cameras = new JComboBox<>();
     private final JComboBox<Dimension> sizes = new JComboBox<>();
+    private final JComboBox<Integer> frameRates = new JComboBox<>();
     private final JButton startCamera = new JButton("Start camera");
     private final JCheckBox freeze = new JCheckBox("Freeze frame");
     private final JComboBox<Integer> zoom = new JComboBox<>(new Integer[]{1, 2, 3});
@@ -59,6 +61,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private final JButton moveButton = new JButton("Move tool to crosshair");
     private final JButton zeroButton = new JButton("Set XY zero here");
     private LengthUnit lastUnit;
+    private boolean updatingCameraModes;
 
     public CameraMonitorPanel(MachineGateway machine) {
         this.machine = machine;
@@ -91,6 +94,8 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         panel.add(new JLabel("USB camera:"));
         panel.add(cameras);
         panel.add(sizes);
+        panel.add(new JLabel("Preview FPS:"));
+        panel.add(frameRates);
         panel.add(startCamera);
         panel.add(freeze);
         panel.add(new JLabel("Zoom:"));
@@ -156,11 +161,12 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     }
 
     private void wireEvents() {
-        cameras.addActionListener(event -> updateSizes());
+        cameras.addActionListener(event -> updateCameraModes());
         startCamera.addActionListener(event -> toggleCamera());
         freeze.addActionListener(event -> imagePanel.setFrozen(freeze.isSelected()));
         zoom.addActionListener(event -> updateZoom());
         rotation.addActionListener(event -> updateRotation());
+        frameRates.addActionListener(event -> saveFrameRate());
         offsetX.addChangeListener(event -> updateMovementPreview());
         offsetY.addChangeListener(event -> updateMovementPreview());
         unit.addActionListener(event -> convertDisplayedUnit());
@@ -189,16 +195,30 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
                 ? "No USB camera found"
                 : devices.size() + (devices.size() == 1 ? " camera found" : " cameras found"));
         startCamera.setEnabled(!devices.isEmpty());
-        updateSizes();
+        updateCameraModes();
     }
 
-    private void updateSizes() {
-        sizes.removeAllItems();
-        CameraDevice selected = (CameraDevice) cameras.getSelectedItem();
-        if (selected != null) {
+    private void updateCameraModes() {
+        updatingCameraModes = true;
+        try {
+            sizes.removeAllItems();
+            frameRates.removeAllItems();
+            CameraDevice selected = (CameraDevice) cameras.getSelectedItem();
+            if (selected == null) return;
+
             for (Dimension size : selected.viewSizes()) sizes.addItem(size);
             Dimension preferred = selected.preferredViewSize();
             if (preferred != null) sizes.setSelectedItem(preferred);
+
+            for (int frameRate : selected.frameRates()) frameRates.addItem(frameRate);
+            int savedFrameRate = preferences.getInt(PREF_FPS, selected.preferredFrameRate());
+            boolean supported = false;
+            for (int frameRate : selected.frameRates()) {
+                if (frameRate == savedFrameRate) supported = true;
+            }
+            frameRates.setSelectedItem(supported ? savedFrameRate : selected.preferredFrameRate());
+        } finally {
+            updatingCameraModes = false;
         }
     }
 
@@ -207,11 +227,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
             JLabel label = (JLabel) new DefaultListCellRenderer()
                     .getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
             if (value != null) {
-                CameraDevice cameraDevice = (CameraDevice) cameras.getSelectedItem();
-                String suffix = cameraDevice != null && !cameraDevice.isReportedViewSize(value)
-                        ? " (additional mode)"
-                        : "";
-                label.setText(value.width + " × " + value.height + suffix);
+                label.setText(value.width + " × " + value.height);
             }
             return label;
         });
@@ -222,6 +238,12 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         if (selected == null) return;
         imagePanel.setZoom(selected);
         preferences.putInt(PREF_ZOOM, selected);
+    }
+
+    private void saveFrameRate() {
+        if (updatingCameraModes) return;
+        Integer selected = (Integer) frameRates.getSelectedItem();
+        if (selected != null) preferences.putInt(PREF_FPS, selected);
     }
 
     private void updateRotation() {
@@ -240,7 +262,9 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         }
         CameraDevice selected = (CameraDevice) cameras.getSelectedItem();
         if (selected == null) return;
-        camera.start(selected, (Dimension) sizes.getSelectedItem(), imagePanel::setFrame);
+        Integer frameRate = (Integer) frameRates.getSelectedItem();
+        if (frameRate == null) return;
+        camera.start(selected, (Dimension) sizes.getSelectedItem(), frameRate, imagePanel::setFrame);
         startCamera.setText("Stop camera");
     }
 

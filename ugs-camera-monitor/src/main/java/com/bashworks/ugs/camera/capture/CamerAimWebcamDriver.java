@@ -14,7 +14,7 @@ import java.util.List;
 
 /**
  * Uses the webcam-capture native UVC bridge with CamerAim's deterministic
- * 30 FPS device implementation instead of the library's hard-coded 50 FPS device.
+ * selectable-FPS device implementation instead of the library's hard-coded 50 FPS device.
  */
 public final class CamerAimWebcamDriver implements WebcamDriver, WebcamDiscoverySupport {
     private OpenIMAJGrabber discoveryGrabber;

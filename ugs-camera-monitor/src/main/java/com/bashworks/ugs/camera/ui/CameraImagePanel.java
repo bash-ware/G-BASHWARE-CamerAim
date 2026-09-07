@@ -80,10 +80,10 @@ public final class CameraImagePanel extends JPanel {
             int cy = getHeight() / 2;
             g.setColor(Color.RED);
             g.setStroke(new BasicStroke(1.0f));
-            g.drawLine(cx, top, cx, cy - 1);
-            g.drawLine(cx, cy + 1, cx, top + height);
-            g.drawLine(left, cy, cx - 1, cy);
-            g.drawLine(cx + 1, cy, left + width, cy);
+            g.drawLine(cx, top, cx, cy - 2);
+            g.drawLine(cx, cy + 2, cx, top + height);
+            g.drawLine(left, cy, cx - 2, cy);
+            g.drawLine(cx + 2, cy, left + width, cy);
             g.drawOval(cx - 12, cy - 12, 24, 24);
 
             if (frozen) {

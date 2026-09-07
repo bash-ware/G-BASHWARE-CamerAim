@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 
 public class CameraImagePanelTest {
     @Test
-    public void leavesTheExactCrosshairCenterPixelVisible() {
+    public void leavesAThreeByThreeCrosshairCenterVisible() {
         CameraImagePanel panel = new CameraImagePanel();
         panel.setSize(101, 101);
 
@@ -26,9 +26,13 @@ public class CameraImagePanelTest {
         panel.paint(renderedGraphics);
         renderedGraphics.dispose();
 
-        assertEquals(Color.WHITE.getRGB(), rendered.getRGB(50, 50));
-        assertEquals(Color.RED.getRGB(), rendered.getRGB(50, 49));
-        assertEquals(Color.RED.getRGB(), rendered.getRGB(51, 50));
+        for (int y = 49; y <= 51; y++) {
+            for (int x = 49; x <= 51; x++) {
+                assertEquals(Color.WHITE.getRGB(), rendered.getRGB(x, y));
+            }
+        }
+        assertEquals(Color.RED.getRGB(), rendered.getRGB(50, 48));
+        assertEquals(Color.RED.getRGB(), rendered.getRGB(52, 50));
     }
 
     @Test(expected = IllegalArgumentException.class)

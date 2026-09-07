@@ -8,50 +8,52 @@ import java.util.List;
 import java.util.Map;
 
 final class CameraResolutionCatalog {
-    private static final Dimension[] COMMON_RESOLUTIONS = {
-            new Dimension(160, 120),
-            new Dimension(176, 144),
-            new Dimension(320, 240),
-            new Dimension(352, 288),
+    private static final Dimension[] FIVE_MP_CAMERA_RESOLUTIONS = {
             new Dimension(640, 480),
             new Dimension(800, 600),
-            new Dimension(1024, 768),
             new Dimension(1280, 720),
             new Dimension(1280, 960),
-            new Dimension(1280, 1024),
-            new Dimension(1600, 1200),
             new Dimension(1920, 1080),
-            new Dimension(2048, 1536),
-            new Dimension(2560, 1440),
             new Dimension(2560, 1920),
             new Dimension(2592, 1944)
     };
+    private static final int[] FIVE_MP_CAMERA_FRAME_RATES = {5, 10, 15, 20, 25, 30};
+    private static final int[] DEFAULT_FRAME_RATES = {30};
 
     private CameraResolutionCatalog() {
     }
 
-    static Dimension[] customResolutions() {
-        return copy(COMMON_RESOLUTIONS);
-    }
-
-    static List<Dimension> merged(Dimension[] reported) {
+    static List<Dimension> supported(String deviceName, Dimension[] reported) {
+        Dimension[] source = isFiveMegapixelCamera(deviceName)
+                ? FIVE_MP_CAMERA_RESOLUTIONS
+                : reported;
         Map<String, Dimension> unique = new LinkedHashMap<>();
-        Arrays.stream(reported).forEach(size -> unique.put(key(size), copy(size)));
-        Arrays.stream(COMMON_RESOLUTIONS).forEach(size -> unique.putIfAbsent(key(size), copy(size)));
+        Arrays.stream(source).forEach(size -> unique.putIfAbsent(key(size), copy(size)));
         return unique.values().stream()
                 .sorted(Comparator.comparingLong(CameraResolutionCatalog::pixels))
                 .toList();
     }
 
-    static Dimension largestReported(Dimension[] reported) {
-        return Arrays.stream(reported)
+    static Dimension[] customResolutions(String deviceName, Dimension[] reported) {
+        return supported(deviceName, reported).toArray(Dimension[]::new);
+    }
+
+    static int[] frameRates(String deviceName) {
+        int[] source = isFiveMegapixelCamera(deviceName)
+                ? FIVE_MP_CAMERA_FRAME_RATES
+                : DEFAULT_FRAME_RATES;
+        return Arrays.copyOf(source, source.length);
+    }
+
+    static Dimension largest(List<Dimension> sizes) {
+        return sizes.stream()
                 .max(Comparator.comparingLong(CameraResolutionCatalog::pixels))
                 .map(CameraResolutionCatalog::copy)
                 .orElse(null);
     }
 
-    static boolean contains(Dimension[] sizes, Dimension candidate) {
-        return Arrays.stream(sizes).anyMatch(candidate::equals);
+    private static boolean isFiveMegapixelCamera(String deviceName) {
+        return deviceName != null && deviceName.toLowerCase(java.util.Locale.ROOT).contains("5mp camera");
     }
 
     private static long pixels(Dimension size) {
@@ -64,9 +66,5 @@ final class CameraResolutionCatalog {
 
     private static Dimension copy(Dimension size) {
         return new Dimension(size.width, size.height);
-    }
-
-    private static Dimension[] copy(Dimension[] sizes) {
-        return Arrays.stream(sizes).map(CameraResolutionCatalog::copy).toArray(Dimension[]::new);
     }
 }
