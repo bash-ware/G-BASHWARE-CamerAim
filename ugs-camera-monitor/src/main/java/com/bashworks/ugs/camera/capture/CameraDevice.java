@@ -32,10 +32,6 @@ public final class CameraDevice {
         return CameraResolutionCatalog.largestReported(reportedViewSizes);
     }
 
-    Dimension fallbackViewSize(Dimension requested) {
-        if (requested == null || isReportedViewSize(requested)) return null;
-        return preferredViewSize();
-    }
 
     @Override
     public String toString() {

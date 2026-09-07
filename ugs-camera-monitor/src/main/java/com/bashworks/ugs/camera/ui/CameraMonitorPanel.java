@@ -166,7 +166,14 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         unit.addActionListener(event -> convertDisplayedUnit());
         moveButton.addActionListener(event -> moveTool());
         zeroButton.addActionListener(event -> setXyZero());
-        camera.addStatusListener(status -> SwingUtilities.invokeLater(() -> cameraStatus.setText(status)));
+        camera.addStatusListener(status -> SwingUtilities.invokeLater(() -> {
+            cameraStatus.setText(status);
+            if (status.startsWith("Camera active:")) {
+                startCamera.setText("Stop camera");
+            } else if (status.equals("Camera stopped") || status.startsWith("Camera error:")) {
+                startCamera.setText("Start camera");
+            }
+        }));
     }
 
     private void scanCameras() {

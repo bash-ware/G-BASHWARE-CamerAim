@@ -9,12 +9,16 @@ import java.util.Map;
 
 final class CameraResolutionCatalog {
     private static final Dimension[] COMMON_RESOLUTIONS = {
+            new Dimension(160, 120),
+            new Dimension(176, 144),
             new Dimension(320, 240),
+            new Dimension(352, 288),
             new Dimension(640, 480),
             new Dimension(800, 600),
             new Dimension(1024, 768),
             new Dimension(1280, 720),
             new Dimension(1280, 960),
+            new Dimension(1280, 1024),
             new Dimension(1600, 1200),
             new Dimension(1920, 1080),
             new Dimension(2048, 1536),

@@ -14,10 +14,18 @@ import java.util.stream.Collectors;
 
 public final class CameraCaptureService implements AutoCloseable {
     private static final Logger LOGGER = Logger.getLogger(CameraCaptureService.class.getName());
+    private static final int MODE_OPEN_ATTEMPTS = 3;
+    private static final long CAMERA_RELEASE_DELAY_MS = 400L;
+    private static final long PREVIOUS_SESSION_TIMEOUT_MS = 8000L;
+
     private final List<Consumer<String>> statusListeners = new CopyOnWriteArrayList<>();
     private final AtomicLong generation = new AtomicLong();
     private volatile boolean running;
     private volatile Thread captureThread;
+
+    public CameraCaptureService() {
+        Webcam.setDriver(CamerAimWebcamDriver.class);
+    }
 
     public void findDevices(Consumer<List<CameraDevice>> onSuccess, Consumer<Throwable> onFailure) {
         Thread scanner = new Thread(() -> {
@@ -31,93 +39,150 @@ public final class CameraCaptureService implements AutoCloseable {
                 LOGGER.log(Level.WARNING, "Failed to discover USB cameras", error);
                 onFailure.accept(error);
             }
-        }, "ugs-camera-scan");
+        }, "cameraim-camera-scan");
         scanner.setDaemon(true);
         scanner.start();
     }
 
     public synchronized void start(CameraDevice device, Dimension size, Consumer<BufferedImage> onFrame) {
         Thread previous = captureThread;
-        stop();
+        running = false;
+        generation.incrementAndGet();
+
         long activeGeneration = generation.incrementAndGet();
         running = true;
-        captureThread = new Thread(() -> {
-            if (previous != null) {
-                try {
-                    previous.join(1500L);
-                } catch (InterruptedException ignored) {
-                    Thread.currentThread().interrupt();
-                    return;
+        Thread next = new Thread(
+                () -> startAfterPrevious(previous, activeGeneration, device, size, onFrame),
+                "cameraim-camera-capture-" + activeGeneration);
+        next.setDaemon(true);
+        captureThread = next;
+        next.start();
+    }
+
+    private void startAfterPrevious(
+            Thread previous,
+            long activeGeneration,
+            CameraDevice device,
+            Dimension size,
+            Consumer<BufferedImage> onFrame) {
+        try {
+            if (previous != null && previous != Thread.currentThread()) {
+                previous.join(PREVIOUS_SESSION_TIMEOUT_MS);
+                if (previous.isAlive()) {
+                    throw new IllegalStateException("The previous camera session did not release the device in time");
                 }
+                Thread.sleep(CAMERA_RELEASE_DELAY_MS);
             }
+            if (generation.get() != activeGeneration) return;
             captureLoop(activeGeneration, device, size, onFrame);
-        }, "ugs-camera-capture");
-        captureThread.setDaemon(true);
-        captureThread.start();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            finishSession(activeGeneration, false);
+        } catch (Throwable error) {
+            LOGGER.log(Level.WARNING, "Failed to start USB camera", error);
+            notifyStatus("Camera error: " + message(error));
+            finishSession(activeGeneration, false);
+        }
     }
 
     private void captureLoop(long activeGeneration, CameraDevice device, Dimension size, Consumer<BufferedImage> onFrame) {
         Webcam webcam = device.webcam();
+        boolean failed = false;
         try {
-            notifyStatus("Starting camera…");
-            Dimension activeSize = openCamera(webcam, device, size);
+            notifyStatus("Starting camera at " + label(size) + "…");
+            Dimension activeSize = openCamera(webcam, size);
             notifyStatus("Camera active: " + label(activeSize));
             while (running && generation.get() == activeGeneration && !Thread.currentThread().isInterrupted()) {
                 BufferedImage image = webcam.getImage();
                 if (image != null) onFrame.accept(image);
-                Thread.sleep(40L);
+                Thread.sleep(10L);
             }
         } catch (InterruptedException ignored) {
             Thread.currentThread().interrupt();
         } catch (Throwable error) {
+            failed = true;
             LOGGER.log(Level.WARNING, "USB camera failure", error);
-            notifyStatus("Camera error: " + error.getMessage());
+            notifyStatus("Camera error: " + message(error));
         } finally {
-            if (webcam.isOpen()) webcam.close();
-            if (generation.get() == activeGeneration) {
-                running = false;
-                captureThread = null;
-                notifyStatus("Camera stopped");
-            }
+            closeCamera(webcam);
+            finishSession(activeGeneration, !failed);
         }
     }
 
-    private Dimension openCamera(Webcam webcam, CameraDevice device, Dimension requested) throws Throwable {
-        try {
-            return openAt(webcam, requested);
-        } catch (Throwable firstError) {
-            if (webcam.isOpen()) webcam.close();
-            Dimension fallback = device.fallbackViewSize(requested);
-            if (fallback == null) throw firstError;
+    private Dimension openCamera(Webcam webcam, Dimension requested) throws Throwable {
+        Throwable lastError = null;
+        for (int attempt = 1; attempt <= MODE_OPEN_ATTEMPTS; attempt++) {
+            try {
+                Dimension actual = openAt(webcam, requested);
+                if (sameSize(requested, actual)) return actual;
+                lastError = new IllegalStateException(
+                        "Camera returned " + label(actual) + " instead of " + label(requested));
+            } catch (Throwable error) {
+                lastError = error;
+            }
 
-            LOGGER.log(
-                    Level.INFO,
-                    "Resolution {0} was rejected; trying reported mode {1}",
-                    new Object[]{label(requested), label(fallback)});
-            notifyStatus("Mode " + label(requested) + " is unsupported; trying " + label(fallback));
-            return openAt(webcam, fallback);
+            closeCamera(webcam);
+            if (attempt < MODE_OPEN_ATTEMPTS) {
+                notifyStatus("Mode " + label(requested) + " was not confirmed; retrying "
+                        + (attempt + 1) + "/" + MODE_OPEN_ATTEMPTS + "…");
+                Thread.sleep(CAMERA_RELEASE_DELAY_MS);
+            }
         }
+
+        throw new IllegalStateException(
+                "Selected mode " + label(requested)
+                        + " could not be confirmed at 30 fps; no fallback resolution was applied",
+                lastError);
     }
 
     private Dimension openAt(Webcam webcam, Dimension size) {
+        closeCamera(webcam);
         if (size != null) webcam.setViewSize(size);
-        if (!webcam.open(true)) {
+        if (!webcam.open(false)) {
             throw new IllegalStateException("The driver did not open the selected mode " + label(size));
         }
         Dimension actual = webcam.getViewSize();
         return actual != null ? actual : size;
     }
 
+    static boolean sameSize(Dimension expected, Dimension actual) {
+        return expected == null || expected.equals(actual);
+    }
+
     private static String label(Dimension size) {
         return size == null ? "default" : size.width + " × " + size.height;
+    }
+
+    private static String message(Throwable error) {
+        String message = error.getMessage();
+        return message == null || message.isBlank() ? error.getClass().getSimpleName() : message;
+    }
+
+    private static void closeCamera(Webcam webcam) {
+        if (!webcam.isOpen()) return;
+        boolean interrupted = Thread.interrupted();
+        try {
+            webcam.close();
+        } catch (Throwable error) {
+            LOGGER.log(Level.WARNING, "Failed to close USB camera cleanly", error);
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
+    private void finishSession(long activeGeneration, boolean reportStopped) {
+        boolean active;
+        synchronized (this) {
+            if (captureThread == Thread.currentThread()) captureThread = null;
+            active = generation.get() == activeGeneration;
+            if (active) running = false;
+        }
+        if (active && reportStopped) notifyStatus("Camera stopped");
     }
 
     public synchronized void stop() {
         running = false;
         generation.incrementAndGet();
-        Thread thread = captureThread;
-        captureThread = null;
-        if (thread != null) thread.interrupt();
     }
 
     public boolean isRunning() {

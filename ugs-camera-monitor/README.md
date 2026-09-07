@@ -4,9 +4,9 @@ This directory contains the NetBeans module used by G-BASHWARE CamerAim. The pub
 
 ## Build
 
-Run `build.ps1` from the repository root after preparing the local UGS 2.1.6 source and Maven repository. The build runs nine unit tests and writes the installable module to:
+Run `build.ps1` from the repository root after preparing the local UGS 2.1.6 source and Maven repository. The build runs ten unit tests and writes the installable module to:
 
-`target/nbm/ugs-platform-plugin-camera-monitor-2.1.0.nbm`
+`target/nbm/ugs-platform-plugin-camera-monitor-2.1.1.nbm`
 
 The artifact ID and NetBeans code-name base intentionally retain the original Camera Monitor prototype identity. This lets the branded package update an existing installation instead of appearing as a duplicate module.
 
