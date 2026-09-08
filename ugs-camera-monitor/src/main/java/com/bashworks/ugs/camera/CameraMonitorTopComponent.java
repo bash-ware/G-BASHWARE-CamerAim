@@ -27,9 +27,10 @@ import java.awt.BorderLayout;
         id = "com.bashworks.ugs.camera.CameraMonitorTopComponent")
 @ActionReference(path = LocalizingService.MENU_WINDOW_PLUGIN)
 @TopComponent.OpenActionRegistration(
-        displayName = "G-BASHWARE CamerAim",
+        displayName = "G-BASHWARE CamerAim 2.1.3",
         preferredID = "CameraMonitorTopComponent")
 public final class CameraMonitorTopComponent extends TopComponent implements UGSEventListener {
+    private static final String PLUGIN_TITLE = "G-BASHWARE CamerAim 2.1.3";
     private final BackendAPI backend;
     private final CameraMonitorPanel panel;
 
@@ -38,7 +39,7 @@ public final class CameraMonitorTopComponent extends TopComponent implements UGS
         panel = new CameraMonitorPanel(new UgsMachineGateway(backend));
         setLayout(new BorderLayout());
         add(panel, BorderLayout.CENTER);
-        setName("G-BASHWARE CamerAim");
+        setName(PLUGIN_TITLE);
         setToolTipText("USB camera crosshair and calibrated camera-to-tool XY positioning");
     }
 

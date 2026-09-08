@@ -21,12 +21,11 @@ import java.awt.image.WritableRaster;
 import java.nio.ByteBuffer;
 
 /**
- * UVC capture device tuned for cameras whose high-resolution MJPG modes run at
- * 30 FPS. The upstream webcam-capture default device requests 50 FPS, which can
- * make Windows negotiate a valid high-resolution request down to VGA.
+ * UVC capture device with a selectable native frame rate. The upstream
+ * webcam-capture default device requests 50 FPS, which can make Windows
+ * negotiate a valid high-resolution request down to VGA.
  */
 final class CamerAimWebcamDevice implements WebcamDevice, WebcamDevice.FPSSource {
-    private static final double REQUESTED_FPS = 30.0;
     private static final Dimension[] BASE_RESOLUTIONS = {
             new Dimension(160, 120),
             new Dimension(176, 144),
@@ -115,13 +114,21 @@ final class CamerAimWebcamDevice implements WebcamDevice, WebcamDevice.FPSSource
             }
         }
 
-        boolean started = candidate.startSession(
-                size.width,
-                size.height,
-                requestedFps,
-                Pointer.pointerTo(nativeDevice));
+        boolean started;
+        try {
+            started = candidate.startSession(
+                    size.width,
+                    size.height,
+                    requestedFps,
+                    Pointer.pointerTo(nativeDevice));
+        } catch (RuntimeException | Error error) {
+            stopSession(candidate);
+            throw error;
+        }
         if (!started) {
-            throw new WebcamException("Cannot start the native camera grabber at " + label(size));
+            stopSession(candidate);
+            throw new WebcamException("Cannot start the native camera grabber at " + label(size)
+                    + " @ " + fpsLabel(requestedFps));
         }
 
         candidate.setTimeout(5000);
@@ -187,6 +194,20 @@ final class CamerAimWebcamDevice implements WebcamDevice, WebcamDevice.FPSSource
 
     private static String label(Dimension dimension) {
         return dimension.width + " × " + dimension.height;
+    }
+
+    private static void stopSession(OpenIMAJGrabber candidate) {
+        try {
+            candidate.stopSession();
+        } catch (Throwable ignored) {
+            // A failed native start may not have created a stoppable session.
+        }
+    }
+
+    private static String fpsLabel(double frameRate) {
+        return Math.rint(frameRate) == frameRate
+                ? Integer.toString((int) frameRate) + " fps"
+                : Double.toString(frameRate) + " fps";
     }
 
     private static Dimension[] copy(Dimension[] dimensions) {

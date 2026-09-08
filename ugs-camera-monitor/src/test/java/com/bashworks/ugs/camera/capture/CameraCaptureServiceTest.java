@@ -24,4 +24,14 @@ public class CameraCaptureServiceTest {
                 new Dimension(2592, 1944),
                 new Dimension(640, 480)));
     }
+
+    @Test
+    public void triesSelectedFrameRateFirstThenEachOtherStandardRate() {
+        assertTrue(java.util.Arrays.equals(
+                new double[]{10, 30, 25, 20, 15, 5},
+                CameraCaptureService.nativeFrameRateAttempts(10)));
+        assertTrue(java.util.Arrays.equals(
+                new double[]{30, 25, 20, 15, 10, 5},
+                CameraCaptureService.nativeFrameRateAttempts(30)));
+    }
 }

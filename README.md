@@ -13,6 +13,7 @@ The current release targets **UGS Platform 2.1.6** and **Java 17 or newer**. The
 - USB/UVC camera discovery and live preview
 - Hardware-validated `5MP Camera` modes from 640 × 480 through 2592 × 1944
 - Selectable 5, 10, 15, 20, 25, and 30 FPS preview limits with exact output-resolution verification
+- Automatic native FPS negotiation while preserving the selected resolution and preview limit
 - Centered 1×, 2×, and 3× digital zoom
 - 0°, 90°, 180°, and 270° clockwise display rotation
 - Crosshair with an uncovered 3 × 3 pixel opening at its exact center

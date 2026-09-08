@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.3 - 2026-09-08
+
+- Bypass the webcam-capture lock wrapper that could leave the target camera unavailable after a failed start.
+- Keep the selected resolution while retrying the native UVC session at the camera's standard frame rates.
+- Keep the selected Preview FPS as an independent maximum display rate.
+- Release a failed native session before retrying.
+- Show the plugin version after the G-BASHWARE CamerAim title in the UGS tab and Window menu.
 ## 2.1.2 - 2026-09-08
 
 - Show only the seven resolution modes verified on the `5MP Camera` hardware profile.

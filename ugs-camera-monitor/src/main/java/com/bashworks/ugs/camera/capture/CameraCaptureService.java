@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 public final class CameraCaptureService implements AutoCloseable {
     private static final Logger LOGGER = Logger.getLogger(CameraCaptureService.class.getName());
     private static final int MODE_OPEN_ATTEMPTS = 3;
+    private static final int[] STANDARD_FRAME_RATES = {30, 25, 20, 15, 10, 5};
     private static final long CAMERA_RELEASE_DELAY_MS = 400L;
     private static final long PREVIOUS_SESSION_TIMEOUT_MS = 8000L;
 
@@ -100,16 +101,17 @@ public final class CameraCaptureService implements AutoCloseable {
             Dimension size,
             double frameRate,
             Consumer<BufferedImage> onFrame) {
-        Webcam webcam = device.webcam();
         boolean failed = false;
         try {
-            device.setFrameRate(frameRate);
             notifyStatus("Starting camera at " + label(size) + " @ " + fpsLabel(frameRate) + "…");
-            Dimension activeSize = openCamera(webcam, size);
-            notifyStatus("Camera active: " + label(activeSize) + " @ max " + fpsLabel(frameRate));
+            OpenedMode mode = openCamera(device, size, frameRate);
+            String nativeRate = mode.nativeFrameRate() == frameRate
+                    ? ""
+                    : " (camera opened at " + fpsLabel(mode.nativeFrameRate()) + ")";
+            notifyStatus("Camera active: " + label(mode.size()) + " @ max " + fpsLabel(frameRate) + nativeRate);
             while (running && generation.get() == activeGeneration && !Thread.currentThread().isInterrupted()) {
                 long captureStarted = System.nanoTime();
-                BufferedImage image = webcam.getImage();
+                BufferedImage image = device.image();
                 if (image != null) onFrame.accept(image);
                 long captureNanos = System.nanoTime() - captureStarted;
                 sleepNanos(remainingDelayNanos(frameRate, captureNanos));
@@ -121,45 +123,54 @@ public final class CameraCaptureService implements AutoCloseable {
             LOGGER.log(Level.WARNING, "USB camera failure", error);
             notifyStatus("Camera error: " + message(error));
         } finally {
-            closeCamera(webcam);
+            closeCamera(device);
             finishSession(activeGeneration, !failed);
         }
     }
 
-    private Dimension openCamera(Webcam webcam, Dimension requested) throws Throwable {
+    private OpenedMode openCamera(CameraDevice device, Dimension requested, double previewFrameRate) throws Throwable {
         Throwable lastError = null;
-        for (int attempt = 1; attempt <= MODE_OPEN_ATTEMPTS; attempt++) {
-            try {
-                Dimension actual = openAt(webcam, requested);
-                if (sameSize(requested, actual)) return actual;
-                lastError = new IllegalStateException(
-                        "Camera returned " + label(actual) + " instead of " + label(requested));
-            } catch (Throwable error) {
-                lastError = error;
-            }
+        double[] nativeFrameRates = nativeFrameRateAttempts(previewFrameRate);
+        for (double nativeFrameRate : nativeFrameRates) {
+            for (int attempt = 1; attempt <= MODE_OPEN_ATTEMPTS; attempt++) {
+                try {
+                    Dimension actual = openAt(device, requested, nativeFrameRate);
+                    if (sameSize(requested, actual)) return new OpenedMode(actual, nativeFrameRate);
+                    lastError = new IllegalStateException(
+                            "Camera returned " + label(actual) + " instead of " + label(requested));
+                } catch (Throwable error) {
+                    lastError = error;
+                }
 
-            closeCamera(webcam);
-            if (attempt < MODE_OPEN_ATTEMPTS) {
-                notifyStatus("Mode " + label(requested) + " was not confirmed; retrying "
-                        + (attempt + 1) + "/" + MODE_OPEN_ATTEMPTS + "…");
-                Thread.sleep(CAMERA_RELEASE_DELAY_MS);
+                closeCamera(device);
+                if (attempt < MODE_OPEN_ATTEMPTS) Thread.sleep(CAMERA_RELEASE_DELAY_MS);
             }
+            notifyStatus("Mode " + label(requested) + " did not open at " + fpsLabel(nativeFrameRate)
+                    + "; trying another camera rate…");
         }
 
         throw new IllegalStateException(
                 "Selected mode " + label(requested)
-                        + " could not be confirmed at the selected frame rate; no fallback resolution was applied",
+                        + " could not be opened at a standard camera frame rate. Close other camera applications and reconnect the USB camera.",
                 lastError);
     }
 
-    private Dimension openAt(Webcam webcam, Dimension size) {
-        closeCamera(webcam);
-        if (size != null) webcam.setViewSize(size);
-        if (!webcam.open(false)) {
-            throw new IllegalStateException("The driver did not open the selected mode " + label(size));
-        }
-        Dimension actual = webcam.getViewSize();
+    private Dimension openAt(CameraDevice device, Dimension size, double nativeFrameRate) {
+        closeCamera(device);
+        device.open(size, nativeFrameRate);
+        Dimension actual = device.activeSize();
         return actual != null ? actual : size;
+    }
+
+    static double[] nativeFrameRateAttempts(double selected) {
+        if (selected <= 0.0) throw new IllegalArgumentException("Frame rate must be positive");
+        double[] attempts = new double[STANDARD_FRAME_RATES.length + 1];
+        int count = 0;
+        attempts[count++] = selected;
+        for (int candidate : STANDARD_FRAME_RATES) {
+            if (Double.compare(selected, candidate) != 0) attempts[count++] = candidate;
+        }
+        return java.util.Arrays.copyOf(attempts, count);
     }
 
     static long remainingDelayNanos(double frameRate, long captureNanos) {
@@ -194,17 +205,19 @@ public final class CameraCaptureService implements AutoCloseable {
         return message == null || message.isBlank() ? error.getClass().getSimpleName() : message;
     }
 
-    private static void closeCamera(Webcam webcam) {
-        if (!webcam.isOpen()) return;
+    private static void closeCamera(CameraDevice device) {
+        if (!device.isOpen()) return;
         boolean interrupted = Thread.interrupted();
         try {
-            webcam.close();
+            device.closeCamera();
         } catch (Throwable error) {
             LOGGER.log(Level.WARNING, "Failed to close USB camera cleanly", error);
         } finally {
             if (interrupted) Thread.currentThread().interrupt();
         }
     }
+
+    private record OpenedMode(Dimension size, double nativeFrameRate) {}
 
     private void finishSession(long activeGeneration, boolean reportStopped) {
         boolean active;
