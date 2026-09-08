@@ -20,18 +20,21 @@ Installing this branded release over the earlier Camera Monitor prototype update
 
 ## Verify the camera
 
-1. Select the USB camera.
-2. Select one of the hardware-validated resolutions shown for the camera.
-3. Select a **Preview FPS** limit: 5, 10, 15, 20, 25, or 30.
+1. Select the camera. Integrated notebook cameras and USB/UVC cameras are supported.
+2. Wait while CamerAim asks Windows for the camera's available formats, then select one of the displayed resolutions.
+3. Select a **Preview FPS** limit. The choices are capped by the selected resolution's Windows-reported native rate.
 4. Click **Start camera**. CamerAim verifies the exact resolution and never silently substitutes another size.
 5. Set display rotation to match the machine axes.
 6. Use 2× or 3× zoom for fine alignment. Zoom and rotation affect only the view; the crosshair remains at the optical center with a 3 × 3 pixel opening.
 
-### Resolution notes
+### Camera and resolution notes
 
-The tested `5MP Camera` profile contains only modes that returned exact frames through CamerAim: 640 × 480, 800 × 600, 1280 × 720, 1280 × 960, 1920 × 1080, 2560 × 1920, and 2592 × 1944. The plugin requests the selected FPS from the UVC driver and also applies it as a preview limit, so reducing the setting reduces frame processing even when the driver ignores the requested rate.
+Version 2.1.4 reads formats directly from Windows MediaCapture. The resolution list follows the selected camera and computer instead of a hard-coded model profile. CamerAim chooses a valid native format automatically and applies **Preview FPS** only as the displayed-frame limit. This permits a camera that requires 30 FPS for a 5 MP native mode to be displayed at 5 or 10 FPS without asking the driver for an invalid combination.
 
-If the camera opens once and later starts fail, check whether antivirus or endpoint security is blocking Java or UGS from accessing the camera. During development, Bitdefender produced exactly that behavior until camera access was allowed.
+Camera work runs in a separate helper process. A native camera or driver failure ends that helper and reports an error in the panel without taking down UGS. Use **Copy diagnostics** and send the copied text when troubleshooting another computer. **Rescan cameras** refreshes both devices and formats.
+
+On Windows, keep **Settings → Privacy & security → Camera → Let desktop apps access your camera** enabled. Also close Windows Camera before starting CamerAim because most camera drivers allow only one active application.
+
 ## Determine the X/Y offset
 
 1. Raise Z to a safe height.

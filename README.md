@@ -10,10 +10,11 @@ The current release targets **UGS Platform 2.1.6** and **Java 17 or newer**. The
 
 ## Features
 
-- USB/UVC camera discovery and live preview
-- Hardware-validated `5MP Camera` modes from 640 × 480 through 2592 × 1944
+- Windows camera discovery and live preview through the MediaCapture API
+- Resolutions populated from the selected camera's actual Windows-reported formats
 - Selectable 5, 10, 15, 20, 25, and 30 FPS preview limits with exact output-resolution verification
-- Automatic native FPS negotiation while preserving the selected resolution and preview limit
+- Camera capture isolated from UGS so a failed or crashed camera helper cannot terminate UGS
+- Exact output-resolution verification and copyable camera diagnostics
 - Centered 1×, 2×, and 3× digital zoom
 - 0°, 90°, 180°, and 270° clockwise display rotation
 - Crosshair with an uncovered 3 × 3 pixel opening at its exact center
@@ -23,6 +24,8 @@ The current release targets **UGS Platform 2.1.6** and **Java 17 or newer**. The
 - A separate command to set the current work X/Y zero
 - Movement lockout unless UGS is connected, Idle, and able to jog
 - Built-in G-BASHWARE update-center registration
+
+Version 2.1.4 requires Windows 10 or 11. It no longer loads the legacy OpenIMAJ/videoInput native camera library into UGS.
 
 ## Install
 

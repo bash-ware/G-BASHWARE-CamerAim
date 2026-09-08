@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.4 - 2026-09-08
+
+- Replace the legacy OpenIMAJ/videoInput camera backend with Windows MediaCapture.
+- Run camera discovery and capture in separate helper processes so a native camera failure cannot crash UGS.
+- Populate resolutions and native formats from the selected camera's Windows-reported capabilities.
+- Keep Preview FPS as an independent display limit and select a valid native mode automatically.
+- Add bounded startup and frame timeouts, safe cancellation, and detailed copyable diagnostics.
+- Show the build-derived plugin version in the panel header and restored UGS tab title.
+
 ## 2.1.3 - 2026-09-08
 
 - Bypass the webcam-capture lock wrapper that could leave the target camera unavailable after a failed start.
@@ -7,6 +16,7 @@
 - Keep the selected Preview FPS as an independent maximum display rate.
 - Release a failed native session before retrying.
 - Show the plugin version after the G-BASHWARE CamerAim title in the UGS tab and Window menu.
+
 ## 2.1.2 - 2026-09-08
 
 - Show only the seven resolution modes verified on the `5MP Camera` hardware profile.

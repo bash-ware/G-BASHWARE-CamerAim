@@ -1,253 +1,186 @@
 package com.bashworks.ugs.camera.capture;
 
-import com.github.sarxos.webcam.Webcam;
-
+import com.bashworks.ugs.camera.PluginInfo;
 import java.awt.Dimension;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 public final class CameraCaptureService implements AutoCloseable {
-    private static final Logger LOGGER = Logger.getLogger(CameraCaptureService.class.getName());
-    private static final int MODE_OPEN_ATTEMPTS = 3;
-    private static final int[] STANDARD_FRAME_RATES = {30, 25, 20, 15, 10, 5};
-    private static final long CAMERA_RELEASE_DELAY_MS = 400L;
-    private static final long PREVIOUS_SESSION_TIMEOUT_MS = 8000L;
-
+    private final WindowsCameraBackend backend = new WindowsCameraBackend();
     private final List<Consumer<String>> statusListeners = new CopyOnWriteArrayList<>();
-    private final AtomicLong generation = new AtomicLong();
+    private final ExecutorService captures = daemonExecutor("cameraim-capture");
+    private final ExecutorService scans = daemonExecutor("cameraim-scan");
+    private final StringBuilder diagnostics = new StringBuilder();
+    private long generation;
+    private long scanGeneration;
     private volatile boolean running;
-    private volatile Thread captureThread;
+    private CameraHelperProcess activeCapture;
+    private CameraHelperProcess activeScan;
 
     public CameraCaptureService() {
-        Webcam.setDriver(CamerAimWebcamDriver.class);
+        log(PluginInfo.TITLE + "\nBackend: Windows MediaCapture (separate process)\n"
+                + "OS: " + System.getProperty("os.name") + " " + System.getProperty("os.version")
+                + " " + System.getProperty("os.arch") + "\nJava: " + System.getProperty("java.version"));
     }
 
-    public void findDevices(Consumer<List<CameraDevice>> onSuccess, Consumer<Throwable> onFailure) {
-        Thread scanner = new Thread(() -> {
+    private static ExecutorService daemonExecutor(String name) {
+        return Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, name);
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
+    public void findDevices(Consumer<List<CameraDevice>> success, Consumer<Throwable> failure) {
+        scan("devices", helper -> backend.devices(helper), success, failure);
+    }
+
+    public void findModes(CameraDevice device, Consumer<List<CameraMode>> success, Consumer<Throwable> failure) {
+        scan("modes", helper -> {
+            List<CameraMode> modes = backend.modes(helper, device);
+            log("Camera: " + device + "\nWindows formats:\n"
+                    + modes.stream().map(CameraMode::label).reduce("", (a, b) -> a + b + "\n"));
+            return modes;
+        }, modes -> { device.setModes(modes); success.accept(modes); }, failure);
+    }
+
+    private synchronized <T> void scan(String operation, Query<T> query, Consumer<T> success, Consumer<Throwable> failure) {
+        long token = ++scanGeneration;
+        if (activeScan != null) activeScan.cancel();
+        scans.submit(() -> {
             try {
-                List<CameraDevice> devices = Webcam.getWebcams().stream()
-                        .map(CameraDevice::new)
-                        .collect(Collectors.toList());
-                LOGGER.log(Level.INFO, "USB cameras found: {0}", devices.size());
-                onSuccess.accept(devices);
-            } catch (Throwable error) {
-                LOGGER.log(Level.WARNING, "Failed to discover USB cameras", error);
-                onFailure.accept(error);
+                T result;
+                synchronized (this) { if (scanGeneration != token) return; }
+                try (CameraHelperProcess helper = backend.launch(operation, this::log)) {
+                    synchronized (this) {
+                        if (scanGeneration != token) return;
+                        activeScan = helper;
+                    }
+                    result = query.run(helper);
+                }
+                synchronized (this) {
+                    if (scanGeneration != token) return;
+                    activeScan = null;
+                    success.accept(result);
+                }
+            } catch (Exception error) {
+                log("Discovery failed: " + error.getMessage());
+                synchronized (this) {
+                    if (scanGeneration == token) {
+                        activeScan = null;
+                        failure.accept(error);
+                    }
+                }
             }
-        }, "cameraim-camera-scan");
-        scanner.setDaemon(true);
-        scanner.start();
+        });
     }
 
     public void start(CameraDevice device, Dimension size, Consumer<BufferedImage> onFrame) {
         start(device, size, device.preferredFrameRate(), onFrame);
     }
 
-    public synchronized void start(
-            CameraDevice device,
-            Dimension size,
-            double frameRate,
-            Consumer<BufferedImage> onFrame) {
-        Thread previous = captureThread;
-        running = false;
-        generation.incrementAndGet();
-
-        long activeGeneration = generation.incrementAndGet();
+    public synchronized void start(CameraDevice device, Dimension size, double previewRate, Consumer<BufferedImage> onFrame) {
+        if (!Double.isFinite(previewRate) || previewRate <= 0 || previewRate > 120) {
+            throw new IllegalArgumentException("Invalid preview frame rate");
+        }
+        long token = ++generation;
+        if (activeCapture != null) activeCapture.cancel();
         running = true;
-        Thread next = new Thread(
-                () -> startAfterPrevious(previous, activeGeneration, device, size, frameRate, onFrame),
-                "cameraim-camera-capture-" + activeGeneration);
-        next.setDaemon(true);
-        captureThread = next;
-        next.start();
+        publish(token, "Starting camera at " + label(size) + "…");
+        captures.submit(() -> capture(token, device, size, previewRate, onFrame));
     }
 
-    private void startAfterPrevious(
-            Thread previous,
-            long activeGeneration,
-            CameraDevice device,
-            Dimension size,
-            double frameRate,
-            Consumer<BufferedImage> onFrame) {
-        try {
-            if (previous != null && previous != Thread.currentThread()) {
-                previous.join(PREVIOUS_SESSION_TIMEOUT_MS);
-                if (previous.isAlive()) {
-                    throw new IllegalStateException("The previous camera session did not release the device in time");
+    private void capture(long token, CameraDevice device, Dimension size, double previewRate, Consumer<BufferedImage> onFrame) {
+        List<CameraMode> candidates = device.candidates(size);
+        String lastError = "No Windows-reported mode matches this resolution. Rescan cameras.";
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
+        for (CameraMode mode : candidates) {
+            if (System.nanoTime() > deadline) break;
+            synchronized (this) { if (generation != token) return; }
+            boolean deliveredFrame = false;
+            try (CameraHelperProcess helper = backend.launch("capture", this::log)) {
+                synchronized (this) {
+                    if (generation != token) return;
+                    activeCapture = helper;
                 }
-                Thread.sleep(CAMERA_RELEASE_DELAY_MS);
-            }
-            if (generation.get() != activeGeneration) return;
-            captureLoop(activeGeneration, device, size, frameRate, onFrame);
-        } catch (InterruptedException error) {
-            Thread.currentThread().interrupt();
-            finishSession(activeGeneration, false);
-        } catch (Throwable error) {
-            LOGGER.log(Level.WARNING, "Failed to start USB camera", error);
-            notifyStatus("Camera error: " + message(error));
-            finishSession(activeGeneration, false);
-        }
-    }
-
-    private void captureLoop(
-            long activeGeneration,
-            CameraDevice device,
-            Dimension size,
-            double frameRate,
-            Consumer<BufferedImage> onFrame) {
-        boolean failed = false;
-        try {
-            notifyStatus("Starting camera at " + label(size) + " @ " + fpsLabel(frameRate) + "…");
-            OpenedMode mode = openCamera(device, size, frameRate);
-            String nativeRate = mode.nativeFrameRate() == frameRate
-                    ? ""
-                    : " (camera opened at " + fpsLabel(mode.nativeFrameRate()) + ")";
-            notifyStatus("Camera active: " + label(mode.size()) + " @ max " + fpsLabel(frameRate) + nativeRate);
-            while (running && generation.get() == activeGeneration && !Thread.currentThread().isInterrupted()) {
-                long captureStarted = System.nanoTime();
-                BufferedImage image = device.image();
-                if (image != null) onFrame.accept(image);
-                long captureNanos = System.nanoTime() - captureStarted;
-                sleepNanos(remainingDelayNanos(frameRate, captureNanos));
-            }
-        } catch (InterruptedException ignored) {
-            Thread.currentThread().interrupt();
-        } catch (Throwable error) {
-            failed = true;
-            LOGGER.log(Level.WARNING, "USB camera failure", error);
-            notifyStatus("Camera error: " + message(error));
-        } finally {
-            closeCamera(device);
-            finishSession(activeGeneration, !failed);
-        }
-    }
-
-    private OpenedMode openCamera(CameraDevice device, Dimension requested, double previewFrameRate) throws Throwable {
-        Throwable lastError = null;
-        double[] nativeFrameRates = nativeFrameRateAttempts(previewFrameRate);
-        for (double nativeFrameRate : nativeFrameRates) {
-            for (int attempt = 1; attempt <= MODE_OPEN_ATTEMPTS; attempt++) {
-                try {
-                    Dimension actual = openAt(device, requested, nativeFrameRate);
-                    if (sameSize(requested, actual)) return new OpenedMode(actual, nativeFrameRate);
-                    lastError = new IllegalStateException(
-                            "Camera returned " + label(actual) + " instead of " + label(requested));
-                } catch (Throwable error) {
-                    lastError = error;
+                log("Opening " + device + ": " + mode.label() + "; preview limit " + previewRate);
+                publish(token, "Starting camera: " + mode.label() + "…");
+                backend.configureCapture(helper, device, mode, previewRate);
+                while (isActive(token)) {
+                    BufferedImage frame = helper.readFrame(size);
+                    synchronized (this) {
+                        if (generation != token) return;
+                        if (!deliveredFrame) {
+                            deliveredFrame = true;
+                            publish(token, "Camera active: " + mode.label() + " | Preview max " + previewRate + " fps");
+                        }
+                        onFrame.accept(frame);
+                    }
                 }
-
-                closeCamera(device);
-                if (attempt < MODE_OPEN_ATTEMPTS) Thread.sleep(CAMERA_RELEASE_DELAY_MS);
+                return;
+            } catch (Exception error) {
+                synchronized (this) { if (generation != token) return; }
+                lastError = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+                log("Capture failed for " + mode.label() + ": " + lastError);
+                // A live-session failure is reported; never silently reconnect a frozen positioning image.
+                // Permission denial is not a format negotiation failure.
+                if (deliveredFrame || lastError.contains("80070005")) break;
+            } finally {
+                synchronized (this) { if (generation == token) activeCapture = null; }
             }
-            notifyStatus("Mode " + label(requested) + " did not open at " + fpsLabel(nativeFrameRate)
-                    + "; trying another camera rate…");
         }
-
-        throw new IllegalStateException(
-                "Selected mode " + label(requested)
-                        + " could not be opened at a standard camera frame rate. Close other camera applications and reconnect the USB camera.",
-                lastError);
-    }
-
-    private Dimension openAt(CameraDevice device, Dimension size, double nativeFrameRate) {
-        closeCamera(device);
-        device.open(size, nativeFrameRate);
-        Dimension actual = device.activeSize();
-        return actual != null ? actual : size;
-    }
-
-    static double[] nativeFrameRateAttempts(double selected) {
-        if (selected <= 0.0) throw new IllegalArgumentException("Frame rate must be positive");
-        double[] attempts = new double[STANDARD_FRAME_RATES.length + 1];
-        int count = 0;
-        attempts[count++] = selected;
-        for (int candidate : STANDARD_FRAME_RATES) {
-            if (Double.compare(selected, candidate) != 0) attempts[count++] = candidate;
-        }
-        return java.util.Arrays.copyOf(attempts, count);
-    }
-
-    static long remainingDelayNanos(double frameRate, long captureNanos) {
-        if (frameRate <= 0.0) throw new IllegalArgumentException("Frame rate must be positive");
-        long intervalNanos = Math.max(1L, Math.round(1_000_000_000.0 / frameRate));
-        return Math.max(0L, intervalNanos - Math.max(0L, captureNanos));
-    }
-
-    private static void sleepNanos(long delayNanos) throws InterruptedException {
-        if (delayNanos <= 0L) return;
-        long millis = delayNanos / 1_000_000L;
-        int nanos = (int) (delayNanos % 1_000_000L);
-        Thread.sleep(millis, nanos);
-    }
-
-    static boolean sameSize(Dimension expected, Dimension actual) {
-        return expected == null || expected.equals(actual);
-    }
-
-    private static String label(Dimension size) {
-        return size == null ? "default" : size.width + " × " + size.height;
-    }
-
-    private static String fpsLabel(double frameRate) {
-        return Math.rint(frameRate) == frameRate
-                ? Integer.toString((int) frameRate) + " fps"
-                : Double.toString(frameRate) + " fps";
-    }
-
-    private static String message(Throwable error) {
-        String message = error.getMessage();
-        return message == null || message.isBlank() ? error.getClass().getSimpleName() : message;
-    }
-
-    private static void closeCamera(CameraDevice device) {
-        if (!device.isOpen()) return;
-        boolean interrupted = Thread.interrupted();
-        try {
-            device.closeCamera();
-        } catch (Throwable error) {
-            LOGGER.log(Level.WARNING, "Failed to close USB camera cleanly", error);
-        } finally {
-            if (interrupted) Thread.currentThread().interrupt();
-        }
-    }
-
-    private record OpenedMode(Dimension size, double nativeFrameRate) {}
-
-    private void finishSession(long activeGeneration, boolean reportStopped) {
-        boolean active;
         synchronized (this) {
-            if (captureThread == Thread.currentThread()) captureThread = null;
-            active = generation.get() == activeGeneration;
-            if (active) running = false;
+            if (generation != token) return;
+            running = false;
+            publish(token, "Camera error: " + concise(lastError) + " Use Copy diagnostics for details.");
         }
-        if (active && reportStopped) notifyStatus("Camera stopped");
     }
+
+    private synchronized boolean isActive(long token) { return running && generation == token; }
 
     public synchronized void stop() {
+        generation++;
         running = false;
-        generation.incrementAndGet();
+        if (activeCapture != null) activeCapture.cancel();
+        activeCapture = null;
+        publish(generation, "Camera stopped");
     }
 
-    public boolean isRunning() {
-        return running;
-    }
+    public boolean isRunning() { return running; }
+    public void addStatusListener(Consumer<String> listener) { statusListeners.add(listener); }
 
-    public void addStatusListener(Consumer<String> listener) {
-        statusListeners.add(listener);
-    }
-
-    private void notifyStatus(String status) {
+    private synchronized void publish(long token, String status) {
+        if (generation != token) return;
+        log(status);
         statusListeners.forEach(listener -> listener.accept(status));
     }
 
-    @Override
-    public void close() {
+    private void log(String message) {
+        synchronized (diagnostics) {
+            diagnostics.append(message).append('\n');
+            if (diagnostics.length() > 32000) diagnostics.delete(0, diagnostics.length() - 32000);
+        }
+    }
+
+    public String diagnostics() {
+        synchronized (diagnostics) { return diagnostics.toString(); }
+    }
+
+    private static String concise(String message) {
+        String oneLine = message.replace('\r', ' ').replace('\n', ' ').strip();
+        return oneLine.length() > 300 ? oneLine.substring(0, 300) + "…" : oneLine;
+    }
+
+    private static String label(Dimension size) { return size.width + " × " + size.height; }
+    @FunctionalInterface private interface Query<T> { T run(CameraHelperProcess helper) throws Exception; }
+
+    @Override public synchronized void close() {
         stop();
+        scanGeneration++;
+        if (activeScan != null) activeScan.cancel();
+        activeScan = null;
     }
 }

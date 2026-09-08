@@ -1,76 +1,57 @@
 package com.bashworks.ugs.camera.capture;
 
-import com.github.sarxos.webcam.Webcam;
-
 import java.awt.Dimension;
-import java.awt.image.BufferedImage;
-import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.IntStream;
 
 public final class CameraDevice {
-    private final Webcam webcam;
-    private final CamerAimWebcamDevice nativeDevice;
-    private final List<Dimension> supportedViewSizes;
-    private final int[] supportedFrameRates;
+    private final String id;
+    private final String name;
+    private volatile List<CameraMode> modes = List.of();
 
-    CameraDevice(Webcam webcam) {
-        this.webcam = webcam;
-        if (!(webcam.getDevice() instanceof CamerAimWebcamDevice device)) {
-            throw new IllegalArgumentException("Unsupported camera device implementation");
-        }
-        this.nativeDevice = device;
-        Dimension[] reported = copy(webcam.getViewSizes());
-        this.supportedViewSizes = CameraResolutionCatalog.supported(webcam.getName(), reported);
-        this.supportedFrameRates = CameraResolutionCatalog.frameRates(webcam.getName());
-        webcam.setCustomViewSizes(CameraResolutionCatalog.customResolutions(webcam.getName(), reported));
+    CameraDevice(String id, String name) {
+        this.id = id;
+        this.name = name;
     }
 
-    void open(Dimension size, double frameRate) {
-        nativeDevice.setResolution(size);
-        nativeDevice.setRequestedFps(frameRate);
-        nativeDevice.open();
-    }
-
-    Dimension activeSize() {
-        return nativeDevice.getResolution();
-    }
-
-    BufferedImage image() {
-        return nativeDevice.getImage();
-    }
-
-    void closeCamera() {
-        nativeDevice.close();
-    }
-
-    boolean isOpen() {
-        return nativeDevice.isOpen();
-    }
+    String id() { return id; }
+    void setModes(List<CameraMode> modes) { this.modes = List.copyOf(modes); }
+    public List<CameraMode> modes() { return modes; }
 
     public List<Dimension> viewSizes() {
-        return supportedViewSizes.stream().map(Dimension::new).toList();
+        return modes.stream().map(CameraMode::size).distinct()
+                .sorted(Comparator.comparingLong(size -> (long) size.width * size.height)).toList();
     }
 
-    public int[] frameRates() {
-        return Arrays.copyOf(supportedFrameRates, supportedFrameRates.length);
+    List<CameraMode> candidates(Dimension size) {
+        return modes.stream().filter(mode -> mode.size().equals(size))
+                .sorted(Comparator.comparingInt(CameraMode::conversionPriority)
+                        .thenComparing(Comparator.comparingDouble(CameraMode::fps).reversed()))
+                .toList();
+    }
+
+    /** Display limits only; native FPS is selected from exact Windows-reported modes. */
+    public int[] frameRates(Dimension size) {
+        double maximum = modes.stream().filter(mode -> size == null || mode.size().equals(size))
+                .mapToDouble(CameraMode::fps).max().orElse(1);
+        int upper = Math.max(1, Math.min(30, (int) Math.floor(maximum)));
+        return IntStream.concat(IntStream.of(5, 10, 15, 20, 25, 30).filter(rate -> rate <= upper),
+                IntStream.of(upper)).distinct().sorted().toArray();
+    }
+
+    public int[] frameRates() { return frameRates(null); }
+    public int preferredFrameRate() {
+        int[] rates = frameRates();
+        return rates[rates.length - 1];
     }
 
     public Dimension preferredViewSize() {
-        return CameraResolutionCatalog.largest(supportedViewSizes);
+        List<Dimension> sizes = viewSizes();
+        // A moderate default also works on lower-powered CNC computers.
+        return sizes.stream().filter(size -> size.width == 1280 && size.height == 720).findFirst()
+                .orElse(sizes.isEmpty() ? null : sizes.get(sizes.size() - 1));
     }
 
-    public int preferredFrameRate() {
-        return Arrays.stream(supportedFrameRates).max().orElse(30);
-    }
-
-    @Override
-    public String toString() {
-        return webcam.getName();
-    }
-
-    private static Dimension[] copy(Dimension[] sizes) {
-        return Arrays.stream(sizes)
-                .map(Dimension::new)
-                .toArray(Dimension[]::new);
-    }
+    @Override public String toString() { return name; }
 }

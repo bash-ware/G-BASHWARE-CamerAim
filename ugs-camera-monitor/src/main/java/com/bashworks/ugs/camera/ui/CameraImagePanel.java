@@ -22,6 +22,11 @@ public final class CameraImagePanel extends JPanel {
         setBackground(new Color(25, 25, 25));
     }
 
+    public void clearFrame() {
+        image = null;
+        repaint();
+    }
+
     public void setFrame(BufferedImage frame) {
         if (!frozen) {
             image = frame;
