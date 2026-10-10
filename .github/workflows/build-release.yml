@@ -39,6 +39,10 @@ jobs:
           mkdir -p .upstream
           git clone --depth 1 --branch "v${UGS_VERSION}" --filter=blob:none \
             https://github.com/winder/Universal-G-Code-Sender.git .upstream/ugs
+
+          # Strip unreachable jogamp repository from upstream pom to prevent 25m build timeouts
+          python3 -c "import re; p='.upstream/ugs/pom.xml'; c=open(p).read(); open(p,'w').write(re.sub(r'<repository>\s*<id>jogamp-remote</id>.*?</repository>', '', c, flags=re.S))"
+
           curl --fail --location --retry 3 \
             "https://github.com/winder/Universal-G-Code-Sender/releases/download/v${UGS_VERSION}/ugs-platform-app-${UGS_VERSION}.zip" \
             --output ".upstream/ugs-platform-app-${UGS_VERSION}.zip"
@@ -75,7 +79,7 @@ jobs:
           set -euo pipefail
           internal_name="ugs-platform-plugin-camera-monitor-${CAMERAIM_VERSION}.nbm"
           built_nbm="ugs-camera-monitor/target/nbm/${internal_name}"
-          release_nbm="G-BASHWARE-CamerAim-for-UGS-${UGS_VERSION}.nbm"
+          release_nbm="G-BASHWARE-CamerAim-${CAMERAIM_VERSION}_for-UGS-${UGS_VERSION}.nbm"
 
           mkdir -p dist package "ugs-camera-monitor/target/netbeans_site"
           cp "$built_nbm" "dist/$release_nbm"

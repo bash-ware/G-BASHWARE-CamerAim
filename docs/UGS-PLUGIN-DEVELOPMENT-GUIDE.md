@@ -280,7 +280,7 @@ To build the distribution ZIP, checksums, and NetBeans update-center catalog:
 .\package.ps1
 ```
 Output files in `dist/`:
-* `G-BASHWARE-CamerAim-for-UGS-2.1.6.nbm` — Ready for manual installation.
+* `G-BASHWARE-CamerAim-2.2.0_for-UGS-2.1.6.nbm` — Ready for manual installation.
 * `G-BASHWARE-CamerAim-2.2.0_UGS-2.1.6_Windows.zip` — Packaged release archive with installation docs.
 * `SHA256SUMS.txt` — Cryptographic verification hashes.
 * `update-center/updates.xml` — NetBeans autoupdate catalog for automatic in-app updates.

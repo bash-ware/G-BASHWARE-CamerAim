@@ -40,7 +40,7 @@ Version 2.2.0 requires Windows 10 or 11. It no longer loads the legacy OpenIMAJ/
 
 ## Install
 
-1. Download the latest `G-BASHWARE-CamerAim-for-UGS-2.1.6.nbm` from [Releases](https://github.com/bash-ware/G-BASHWARE-CamerAim/releases/latest).
+1. Download the latest `G-BASHWARE-CamerAim-2.2.0_for-UGS-2.1.6.nbm` from [Releases](https://github.com/bash-ware/G-BASHWARE-CamerAim/releases/latest).
 2. In UGS Platform, open **Tools → Plugins → Downloaded**.
 3. Choose **Add Plugins**, select the `.nbm` file, and complete the installer.
 4. Restart UGS if requested.

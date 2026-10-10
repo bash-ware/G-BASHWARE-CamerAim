@@ -10,7 +10,7 @@
 ## Install the NBM
 
 1. Close any active CNC job and leave the controller disconnected or Idle.
-2. Download `G-BASHWARE-CamerAim-for-UGS-2.1.6.nbm` from the latest GitHub Release.
+2. Download `G-BASHWARE-CamerAim-2.2.0_for-UGS-2.1.6.nbm` from the latest GitHub Release.
 3. In UGS, open **Tools → Plugins → Downloaded**.
 4. Select **Add Plugins**, choose the downloaded NBM, then follow the installer.
 5. Restart UGS if requested.
