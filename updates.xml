@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 
 <!DOCTYPE module_updates PUBLIC "-//NetBeans//DTD Autoupdate Catalog 2.8//EN" "https://netbeans.apache.org/dtds/autoupdate-catalog-2_8.dtd">
-<module_updates timestamp="28/57/19/10/10/2026">
+<module_updates timestamp="11/14/20/10/10/2026">
 
 
 
-<module codenamebase="com.willwinder.ugs.platform.plugin.camera.monitor" distribution="https://raw.githubusercontent.com/bash-ware/G-BASHWARE-CamerAim/update-center/ugs-platform-plugin-camera-monitor-2.2.0.nbm" downloadsize="60366" homepage="https://github.com/bash-ware/G-BASHWARE-CamerAim" license="36074ADE" moduleauthor="G-BASHWARE" needsrestart="false" releasedate="2026/10/10" targetcluster="ugsplatform">
+<module codenamebase="com.willwinder.ugs.platform.plugin.camera.monitor" distribution="https://raw.githubusercontent.com/bash-ware/G-BASHWARE-CamerAim/update-center/ugs-platform-plugin-camera-monitor-2.2.1.nbm" downloadsize="60723" homepage="https://github.com/bash-ware/G-BASHWARE-CamerAim" license="36074ADE" moduleauthor="G-BASHWARE" needsrestart="false" releasedate="2026/10/10" targetcluster="ugsplatform">
         
-    <manifest AutoUpdate-Essential-Module="false" OpenIDE-Module="com.willwinder.ugs.platform.plugin.camera.monitor" OpenIDE-Module-Display-Category="G-BASHWARE" OpenIDE-Module-Implementation-Version="2.2.0" OpenIDE-Module-Java-Dependencies="Java &gt; 11" OpenIDE-Module-Long-Description="&lt;p&gt;G-BASHWARE CamerAim adds an isolated Windows camera view, a precise crosshair with a 3-by-3-pixel open center, digital zoom, display rotation, and guarded camera-to-tool XY positioning to UGS Platform.&lt;/p&gt;" OpenIDE-Module-Module-Dependencies="com.willwinder.ugs.platform.ugslib &gt; 2.0.0.2024.03.08.07.26, org.netbeans.api.annotations.common/1 &gt; 1.48, org.openide.awt &gt; 7.88, org.openide.windows &gt; 6.97, org.openide.util &gt; 9.28, org.openide.util.lookup &gt; 8.54, org.netbeans.modules.autoupdate.services &gt; 1.76" OpenIDE-Module-Name="G-BASHWARE CamerAim" OpenIDE-Module-Requires="org.openide.modules.ModuleFormat1" OpenIDE-Module-Short-Description="Camera crosshair and calibrated XY positioning for UGS Platform" OpenIDE-Module-Specification-Version="2.2.0"/>
+    <manifest AutoUpdate-Essential-Module="false" OpenIDE-Module="com.willwinder.ugs.platform.plugin.camera.monitor" OpenIDE-Module-Display-Category="G-BASHWARE" OpenIDE-Module-Implementation-Version="2.2.1" OpenIDE-Module-Java-Dependencies="Java &gt; 11" OpenIDE-Module-Long-Description="&lt;p&gt;G-BASHWARE CamerAim adds an isolated Windows camera view, a precise crosshair with a 3-by-3-pixel open center, digital zoom, display rotation, and guarded camera-to-tool XY positioning to UGS Platform.&lt;/p&gt;" OpenIDE-Module-Module-Dependencies="com.willwinder.ugs.platform.ugslib &gt; 2.0.0.2024.03.08.07.26, org.netbeans.api.annotations.common/1 &gt; 1.48, org.openide.awt &gt; 7.88, org.openide.windows &gt; 6.97, org.openide.util &gt; 9.28, org.openide.util.lookup &gt; 8.54, org.netbeans.modules.autoupdate.services &gt; 1.76" OpenIDE-Module-Name="G-BASHWARE CamerAim" OpenIDE-Module-Requires="org.openide.modules.ModuleFormat1" OpenIDE-Module-Short-Description="Camera crosshair and calibrated XY positioning for UGS Platform" OpenIDE-Module-Specification-Version="2.2.1"/>
         
 
-    <message_digest algorithm="SHA-512" value="eb2b08c39174e62292956ad2eaa6902ed8e006d282ba5bf0c66e2c54b7211e9737f9f6e16153e90ffdb23f6d66c6951b97271053ab8de8608b5f2e3d8217ef48"/>
+    <message_digest algorithm="SHA-512" value="85120739e25866752421c0cf0316979012ad91273b46280169e04819b65f60e41eba9cde799bfc61439d7ac4a7b50db92f97d074ad5a1a084cae759bae9d8ff0"/>
 </module>
 
 <license name="36074ADE">Copyright G-BASHWARE 2012-2026
