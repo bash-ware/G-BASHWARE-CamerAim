@@ -18,6 +18,7 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JSpinner;
+import javax.swing.JToggleButton;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
@@ -37,6 +38,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private static final String PREF_FEED = "offset.feed";
     private static final String PREF_AIM_DROP = "aimHeight.drop";
     private static final String PREF_HOMING_CMD = "aimHeight.homingCommand";
+    private static final String PREF_LOCKED = "parameters.locked";
     private static final double DEFAULT_AIM_DROP = 50.0;
     private static final String DEFAULT_HOMING_CMD = "$HZ";
     private static final String PREF_ZOOM = "camera.zoom";
@@ -126,6 +128,8 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private final JSpinner aimDrop;
     private final JButton aimHeightButton = new JButton("Aim height");
     private final JButton configHomingButton = new JButton("⚙ Cmd");
+    private final JButton saveButton = new JButton("Save settings");
+    private final JToggleButton lockParametersButton = new JToggleButton("Lock parameters");
     private final JLabel movementPreview = new JLabel();
     private final JLabel positionLabel = new JLabel("Position: —");
     private final JLabel machineStatus = new JLabel("UGS: —");
@@ -161,6 +165,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         installResolutionRenderer();
         updateAimHeightTooltips();
         updateMovementPreview();
+        applyParametersLocked(preferences.getBoolean(PREF_LOCKED, false));
         refreshMachineState();
         scanCameras();
     }
@@ -242,6 +247,9 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         c.gridx = 4;
         c.gridwidth = 1;
         panel.add(configHomingButton, c);
+        c.gridx = 5;
+        c.gridwidth = 2;
+        panel.add(lockParametersButton, c);
 
         c.gridy = 2;
         c.gridx = 0;
@@ -256,9 +264,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         c.gridx = 0;
         c.gridwidth = 2;
         c.fill = GridBagConstraints.NONE;
-        JButton save = new JButton("Save settings");
-        save.addActionListener(event -> saveOffset());
-        panel.add(save, c);
+        panel.add(saveButton, c);
         c.gridx = 2;
         c.gridwidth = 2;
         panel.add(moveButton, c);
@@ -287,6 +293,8 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         offsetY.addChangeListener(event -> updateMovementPreview());
         aimDrop.addChangeListener(event -> updateAimHeightTooltips());
         unit.addActionListener(event -> convertDisplayedUnit());
+        saveButton.addActionListener(event -> saveOffset());
+        lockParametersButton.addActionListener(event -> toggleParametersLock());
         moveButton.addActionListener(event -> moveTool());
         zeroButton.addActionListener(event -> setXyZero());
         aimHeightButton.addActionListener(event -> goToAimHeight());
@@ -475,13 +483,6 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
             refreshMachineState();
             return;
         }
-        int answer = JOptionPane.showConfirmDialog(
-                this,
-                "The target must be under the crosshair and Z must be at a verified safe height.\n\nRelative move: " + offset.movementLabel(),
-                "Confirm tool movement",
-                JOptionPane.OK_CANCEL_OPTION,
-                JOptionPane.WARNING_MESSAGE);
-        if (answer != JOptionPane.OK_OPTION) return;
 
         try {
             machine.moveToolToCrosshair(offset, ((Number) feedRate.getValue()).doubleValue());
@@ -515,13 +516,39 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         refreshMachineState();
     }
 
+    private void toggleParametersLock() {
+        boolean locked = lockParametersButton.isSelected();
+        preferences.putBoolean(PREF_LOCKED, locked);
+        applyParametersLocked(locked);
+        machineStatus.setText(locked ? "Parameters locked" : "Parameters unlocked");
+    }
+
+    private void applyParametersLocked(boolean locked) {
+        lockParametersButton.setSelected(locked);
+        lockParametersButton.setText(locked ? "Unlock parameters" : "Lock parameters");
+        lockParametersButton.setToolTipText(locked
+                ? "Parameters are locked against accidental changes. Click to unlock."
+                : "Lock all offset, unit, feed, and aim drop parameters.");
+        offsetX.setEnabled(!locked);
+        offsetY.setEnabled(!locked);
+        unit.setEnabled(!locked);
+        feedRate.setEnabled(!locked);
+        aimDrop.setEnabled(!locked);
+        configHomingButton.setEnabled(!locked && !aimHeightInProgress);
+        saveButton.setEnabled(!locked);
+    }
+
+    public boolean isParametersLocked() {
+        return lockParametersButton.isSelected();
+    }
+
     public void refreshMachineState() {
         MachineState state = machine.state();
         boolean canMove = state.canPosition() && !aimHeightInProgress;
         moveButton.setEnabled(canMove);
         zeroButton.setEnabled(canMove);
         aimHeightButton.setEnabled(canMove);
-        configHomingButton.setEnabled(!aimHeightInProgress);
+        configHomingButton.setEnabled(!aimHeightInProgress && !lockParametersButton.isSelected());
         if (!aimHeightInProgress) {
             machineStatus.setText(state.canPosition() ? "UGS: Idle" : "UGS: " + state.blockedReason());
         }
@@ -593,19 +620,6 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         double drop = ((Number) aimDrop.getValue()).doubleValue();
         LengthUnit currentUnit = (LengthUnit) unit.getSelectedItem();
         double feed = ((Number) feedRate.getValue()).doubleValue();
-
-        String confirmMsg = String.format(
-                Locale.US,
-                "Move to Aim Height:\n1. Rehome Z to top using '%s'\n2. Lower Z by %.3f %s (feed %.1f)\n\nEnsure tool and workpiece have safe travel clearance.",
-                homingCommand, drop, currentUnit, feed);
-
-        int answer = JOptionPane.showConfirmDialog(
-                this,
-                confirmMsg,
-                "Confirm Aim Height",
-                JOptionPane.OK_CANCEL_OPTION,
-                JOptionPane.WARNING_MESSAGE);
-        if (answer != JOptionPane.OK_OPTION) return;
 
         aimHeightInProgress = true;
         refreshMachineState();

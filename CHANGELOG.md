@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.1 - 2026-10-10
+
+- Add dedicated **Lock parameters** button to protect calibrated XY offsets, feed rate, and aim drop from accidental adjustments.
+- Remove confirmation check dialogs from **Move tool to crosshair** and **Aim height** buttons for instant 1-click positioning.
+- Streamline release asset naming (`G-BASHWARE-CamerAim-2.2.1_for-UGS-2.1.6.nbm`) and optimize CI build speed.
+
 ## 2.2.0 - 2026-10-10
 
 - Add Aim Height positioning: automated Z-homing cycle (`$H`) followed by lowering Z to a configurable optical drop distance (default 50 mm) for repeatable focal depth calibration.

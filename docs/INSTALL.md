@@ -10,7 +10,7 @@
 ## Install the NBM
 
 1. Close any active CNC job and leave the controller disconnected or Idle.
-2. Download `G-BASHWARE-CamerAim-2.2.0_for-UGS-2.1.6.nbm` from the latest GitHub Release.
+2. Download `G-BASHWARE-CamerAim-2.2.1_for-UGS-2.1.6.nbm` from the latest GitHub Release.
 3. In UGS, open **Tools → Plugins → Downloaded**.
 4. Select **Add Plugins**, choose the downloaded NBM, then follow the installer.
 5. Restart UGS if requested.
@@ -29,7 +29,7 @@ Installing this branded release over the earlier Camera Monitor prototype update
 
 ### Camera and resolution notes
 
-Version 2.2.0 reads formats directly from Windows MediaCapture. The resolution list follows the selected camera and computer instead of a hard-coded model profile. CamerAim chooses a valid native format automatically and applies **Preview FPS** only as the displayed-frame limit. This permits a camera that requires 30 FPS for a 5 MP native mode to be displayed at 5 or 10 FPS without asking the driver for an invalid combination.
+Version 2.2.1 reads formats directly from Windows MediaCapture. The resolution list follows the selected camera and computer instead of a hard-coded model profile. CamerAim chooses a valid native format automatically and applies **Preview FPS** only as the displayed-frame limit. This permits a camera that requires 30 FPS for a 5 MP native mode to be displayed at 5 or 10 FPS without asking the driver for an invalid combination.
 
 Camera work runs in a separate helper process. A native camera or driver failure ends that helper and reports an error in the panel without taking down UGS. Use **Copy diagnostics** and send the copied text when troubleshooting another computer. **Rescan cameras** refreshes both devices and formats.
 
