@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0 - 2026-10-10
+
+- Add Aim Height positioning: automated Z-homing cycle (`$H`) followed by lowering Z to a configurable optical drop distance (default 50 mm) for repeatable focal depth calibration.
+- Expand Windows MediaCapture stream negotiation across VideoRecord and VideoPreview capture streams.
+- Add standalone Swing preview runner (`preview.ps1` / `preview.bat`) and validation test harness without requiring full UGS runtime.
+- Introduce companion local monitoring stack (ASP.NET Core server, Android client, and CNC simulator).
+
 ## 2.1.4 - 2026-09-08
 
 - Replace the legacy OpenIMAJ/videoInput camera backend with Windows MediaCapture.

@@ -89,7 +89,7 @@ The plugin module must inherit from `ugs-platform-parent` and have `<packaging>n
 </parent>
 
 <artifactId>ugs-platform-plugin-camera-monitor</artifactId>
-<version>2.1.4</version>
+<version>2.2.0</version>
 <packaging>nbm</packaging>
 ```
 
@@ -272,7 +272,7 @@ To compile the plugin module and generate the `.nbm`:
 ```powershell
 .\build.ps1 -JavaHome "C:\Program Files\Java\jdk-22" -Maven "C:\java\maven\bin\mvn.cmd"
 ```
-Output: `ugs-camera-monitor\target\nbm\ugs-platform-plugin-camera-monitor-2.1.4.nbm`.
+Output: `ugs-camera-monitor\target\nbm\ugs-platform-plugin-camera-monitor-2.2.0.nbm`.
 
 ### 7.2 Full Packaging & Update-Center Generation
 To build the distribution ZIP, checksums, and NetBeans update-center catalog:
@@ -281,7 +281,7 @@ To build the distribution ZIP, checksums, and NetBeans update-center catalog:
 ```
 Output files in `dist/`:
 * `G-BASHWARE-CamerAim-for-UGS-2.1.6.nbm` — Ready for manual installation.
-* `G-BASHWARE-CamerAim-2.1.4_UGS-2.1.6_Windows.zip` — Packaged release archive with installation docs.
+* `G-BASHWARE-CamerAim-2.2.0_UGS-2.1.6_Windows.zip` — Packaged release archive with installation docs.
 * `SHA256SUMS.txt` — Cryptographic verification hashes.
 * `update-center/updates.xml` — NetBeans autoupdate catalog for automatic in-app updates.
 
