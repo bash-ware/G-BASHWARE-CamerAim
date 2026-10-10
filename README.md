@@ -8,6 +8,17 @@ G-BASHWARE CamerAim is a camera positioning plugin for [Universal Gcode Sender P
 
 The current release targets **UGS Platform 2.1.6** and **Java 17 or newer**. The camera connects directly to the computer running UGS.
 
+The published UGS plugin remains **v2.1.4**. Development of the local monitoring
+system now lives in the same repository:
+
+- shared/ — versioned API v1 contract and fixtures
+- server/ — ASP.NET Core/.NET 10 local server with SQLite
+- simulator/ — deterministic CNC job and retry simulator
+- android-app/ — Kotlin/Jetpack Compose monitoring prototype
+
+These monitoring components are pre-release and do not change the installed
+v2.1.4 camera behavior.
+
 ## Features
 
 - Windows camera discovery and live preview through the MediaCapture API
@@ -22,6 +33,7 @@ The current release targets **UGS Platform 2.1.6** and **Java 17 or newer**. The
 - Exact relative XY movement from the crosshair target to the tool
 - Live machine coordinates and calculated tool target
 - A separate command to set the current work X/Y zero
+- Aim Height: rehome Z to maximum height and lower by a configurable distance (default 50 mm) for consistent optical focal distance
 - Movement lockout unless UGS is connected, Idle, and able to jog
 - Built-in G-BASHWARE update-center registration
 
@@ -58,12 +70,24 @@ The repository keeps UGS source and local Maven artifacts out of Git. On Windows
 
 GitHub Actions performs the complete clean build against the UGS 2.1.6 source and distribution. Every push and pull request runs the tests. A `v*` tag creates the NBM, an installer ZIP, checksums, a GitHub Release, and the NetBeans update-center catalog.
 
+The local server requires the .NET 10 SDK:
+
+~~~powershell
+dotnet build server/CamerAim.Server.csproj
+dotnet run --project server/CamerAim.Server.csproj
+dotnet run --project simulator/CamerAim.Simulator.csproj
+~~~
+
+Android build requirements and device-test limitations are documented in
+[android-app/README.md](android-app/README.md). The shared wire contract is in
+[shared/README.md](shared/README.md).
+
 ## Roadmap
 
-Planned work includes:
+Planned and in-progress work includes:
 
 - live job duration, elapsed time, remaining time, feed, and progress
-- a local monitoring server and ntfy push notifications
+- the local monitoring server and Android notifications without ntfy or Firebase
 - G-code toolpath overlay on the camera image
 - automatic full-table image capture by moving through a calibrated grid
 - lens-distortion calibration, cropping, and image stitching similar to LightBurn camera calibration

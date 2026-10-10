@@ -3,7 +3,13 @@
 .verify/
 dist/
 **/target/
+**/bin/
+**/obj/
 **/.flattened-pom.xml
+server/data/
+android-app/.gradle/
+android-app/local.properties
+android-app/**/build/
 .idea/
 *.iml
 .DS_Store

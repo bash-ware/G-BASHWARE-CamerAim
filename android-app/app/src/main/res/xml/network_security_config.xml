@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Prototype only: bearer tokens over HTTP are acceptable only on a trusted isolated LAN. -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

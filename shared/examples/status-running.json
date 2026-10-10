@@ -1,0 +1,35 @@
+{
+  "apiVersion": "1.0",
+  "machineId": "workshop-cnc-1",
+  "pluginInstanceId": "3bbfd53d-cb55-4ce4-a06f-a21d2092ca02",
+  "observedAt": "2026-09-09T08:30:00Z",
+  "connection": "connected",
+  "camera": {
+    "available": true,
+    "detail": null,
+    "lastFrameAt": "2026-09-09T08:29:58Z"
+  },
+  "job": {
+    "runId": "6cdd4674-ca58-42b9-9083-b4bd4599a194",
+    "fileName": "bracket.nc",
+    "state": "running",
+    "startedAt": "2026-09-09T08:00:00Z",
+    "progressPercent": 41.5,
+    "elapsedSeconds": 1800,
+    "estimatedRemainingSeconds": 2537
+  },
+  "motion": {
+    "feed": 520.0,
+    "feedUnit": "mm/min",
+    "rpm": 12000,
+    "position": {
+      "x": 112.45,
+      "y": 38.2,
+      "z": -1.5,
+      "unit": "mm",
+      "coordinateSystem": "work",
+      "source": "reported"
+    }
+  }
+}
+

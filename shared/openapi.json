@@ -1,0 +1,328 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "G-BASHWARE CamerAim local API",
+    "version": "1.0.0",
+    "description": "Versioned local-network contract for the CamerAim UGS plugin, server, and Android dashboard."
+  },
+  "servers": [{ "url": "http://localhost:5187" }],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/health": {
+      "get": {
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Server health",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/ingest/status": {
+      "post": {
+        "summary": "Store the latest plugin and machine status",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusUpdate" } } }
+        },
+        "responses": {
+          "202": { "description": "Status accepted" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "413": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/v1/ingest/events": {
+      "post": {
+        "summary": "Append or idempotently acknowledge an event",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventInput" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing duplicate event",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventRecord" } } }
+          },
+          "201": {
+            "description": "New event stored",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventRecord" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/v1/ingest/images": {
+      "post": {
+        "summary": "Store a JPEG camera frame",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["metadata", "image"],
+                "properties": {
+                  "metadata": { "type": "string", "description": "JSON-encoded ImageMetadata" },
+                  "image": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ImageRecord" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "413": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/v1/machines/{machineId}/state": {
+      "get": {
+        "summary": "Get the current dashboard state",
+        "parameters": [{ "$ref": "#/components/parameters/MachineId" }],
+        "responses": {
+          "200": {
+            "description": "Current state",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MachineState" } } }
+          },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/v1/machines/{machineId}/events": {
+      "get": {
+        "summary": "Read events after a durable cursor",
+        "parameters": [
+          { "$ref": "#/components/parameters/MachineId" },
+          { "name": "afterSequence", "in": "query", "schema": { "type": "integer", "format": "int64", "minimum": 0, "default": 0 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ordered events",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/EventRecord" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/machines/{machineId}/jobs": {
+      "get": {
+        "summary": "Read recent job runs",
+        "parameters": [
+          { "$ref": "#/components/parameters/MachineId" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest jobs first",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/JobRun" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/images/{imageId}": {
+      "get": {
+        "summary": "Download one stored JPEG",
+        "parameters": [{ "name": "imageId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "200": { "description": "JPEG bytes", "content": { "image/jpeg": { "schema": { "type": "string", "format": "binary" } } } },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/v1/stream": {
+      "get": {
+        "summary": "WebSocket stream of state and event notifications",
+        "description": "Upgrade to WebSocket. Query parameters: machineId and afterSequence. On connection the server first sends missed EventRecord messages, followed by live event and state messages.",
+        "responses": {
+          "101": { "description": "WebSocket protocol switch" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer" }
+    },
+    "parameters": {
+      "MachineId": { "name": "machineId", "in": "path", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[A-Za-z0-9._-]+$" } }
+    },
+    "responses": {
+      "Problem": {
+        "description": "Problem details",
+        "content": { "application/problem+json": { "schema": { "type": "object" } } }
+      }
+    },
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "required": ["status", "apiVersion", "serverTime"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ok"] },
+          "apiVersion": { "type": "string", "enum": ["1.0"] },
+          "serverTime": { "type": "string", "format": "date-time" }
+        }
+      },
+      "StatusUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["apiVersion", "machineId", "pluginInstanceId", "observedAt", "connection", "camera"],
+        "properties": {
+          "apiVersion": { "type": "string", "enum": ["1.0"] },
+          "machineId": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[A-Za-z0-9._-]+$" },
+          "pluginInstanceId": { "type": "string", "format": "uuid" },
+          "observedAt": { "type": "string", "format": "date-time" },
+          "connection": { "type": "string", "enum": ["connected", "disconnected", "connecting", "unknown"] },
+          "camera": { "$ref": "#/components/schemas/CameraStatus" },
+          "job": { "oneOf": [{ "$ref": "#/components/schemas/JobStatus" }, { "type": "null" }] },
+          "motion": { "oneOf": [{ "$ref": "#/components/schemas/MotionStatus" }, { "type": "null" }] }
+        }
+      },
+      "CameraStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["available"],
+        "properties": {
+          "available": { "type": "boolean" },
+          "detail": { "type": ["string", "null"], "maxLength": 300 },
+          "lastFrameAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "JobStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["runId", "state", "startedAt"],
+        "properties": {
+          "runId": { "type": "string", "format": "uuid" },
+          "fileName": { "type": ["string", "null"], "maxLength": 260 },
+          "state": { "$ref": "#/components/schemas/JobState" },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "progressPercent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+          "elapsedSeconds": { "type": ["integer", "null"], "minimum": 0 },
+          "estimatedRemainingSeconds": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      },
+      "MotionStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "feed": { "type": ["number", "null"] },
+          "feedUnit": { "type": ["string", "null"], "enum": ["mm/min", "in/min", null] },
+          "rpm": { "type": ["number", "null"], "minimum": 0 },
+          "position": { "oneOf": [{ "$ref": "#/components/schemas/Position" }, { "type": "null" }] }
+        }
+      },
+      "Position": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["unit", "coordinateSystem", "source"],
+        "properties": {
+          "x": { "type": ["number", "null"] },
+          "y": { "type": ["number", "null"] },
+          "z": { "type": ["number", "null"] },
+          "unit": { "type": "string", "enum": ["mm", "in"] },
+          "coordinateSystem": { "type": "string", "enum": ["machine", "work"] },
+          "source": { "type": "string", "enum": ["reported"] }
+        }
+      },
+      "EventInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["apiVersion", "eventId", "machineId", "occurredAt", "kind"],
+        "properties": {
+          "apiVersion": { "type": "string", "enum": ["1.0"] },
+          "eventId": { "type": "string", "format": "uuid" },
+          "machineId": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[A-Za-z0-9._-]+$" },
+          "runId": { "type": ["string", "null"], "format": "uuid" },
+          "occurredAt": { "type": "string", "format": "date-time" },
+          "kind": { "$ref": "#/components/schemas/EventKind" },
+          "detail": { "type": ["string", "null"], "maxLength": 1000 }
+        }
+      },
+      "EventRecord": {
+        "allOf": [
+          { "$ref": "#/components/schemas/EventInput" },
+          {
+            "type": "object",
+            "required": ["serverSequence", "receivedAt"],
+            "properties": {
+              "serverSequence": { "type": "integer", "format": "int64", "minimum": 1 },
+              "receivedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        ]
+      },
+      "ImageMetadata": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["apiVersion", "machineId", "capturedAt", "isFinal"],
+        "properties": {
+          "apiVersion": { "type": "string", "enum": ["1.0"] },
+          "machineId": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[A-Za-z0-9._-]+$" },
+          "runId": { "type": ["string", "null"], "format": "uuid" },
+          "capturedAt": { "type": "string", "format": "date-time" },
+          "isFinal": { "type": "boolean" }
+        }
+      },
+      "ImageRecord": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ImageMetadata" },
+          {
+            "type": "object",
+            "required": ["imageId", "receivedAt", "contentLength", "url"],
+            "properties": {
+              "imageId": { "type": "string", "format": "uuid" },
+              "receivedAt": { "type": "string", "format": "date-time" },
+              "contentLength": { "type": "integer", "format": "int64", "minimum": 1 },
+              "url": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "MachineState": {
+        "type": "object",
+        "required": ["machineId", "freshness", "lastStatusAt", "connection", "camera"],
+        "properties": {
+          "machineId": { "type": "string" },
+          "freshness": { "type": "string", "enum": ["fresh", "stale", "offline"] },
+          "lastStatusAt": { "type": "string", "format": "date-time" },
+          "connection": { "type": "string", "enum": ["connected", "disconnected", "connecting", "unknown"] },
+          "camera": { "$ref": "#/components/schemas/CameraStatus" },
+          "job": { "oneOf": [{ "$ref": "#/components/schemas/JobStatus" }, { "type": "null" }] },
+          "motion": { "oneOf": [{ "$ref": "#/components/schemas/MotionStatus" }, { "type": "null" }] },
+          "latestImage": { "oneOf": [{ "$ref": "#/components/schemas/ImageRecord" }, { "type": "null" }] },
+          "lastServerSequence": { "type": "integer", "format": "int64", "minimum": 0 }
+        }
+      },
+      "JobRun": {
+        "type": "object",
+        "required": ["machineId", "runId", "state", "startedAt"],
+        "properties": {
+          "machineId": { "type": "string" },
+          "runId": { "type": "string", "format": "uuid" },
+          "fileName": { "type": ["string", "null"] },
+          "state": { "$ref": "#/components/schemas/JobState" },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "endedAt": { "type": ["string", "null"], "format": "date-time" },
+          "finalImageId": { "type": ["string", "null"], "format": "uuid" }
+        }
+      },
+      "JobState": { "type": "string", "enum": ["running", "paused", "completed", "cancelled", "alarm", "unknown"] },
+      "EventKind": { "type": "string", "enum": ["started", "paused", "resumed", "completed", "cancelled", "alarm", "disconnected", "reconnected", "cameraUnavailable"] }
+    }
+  }
+}

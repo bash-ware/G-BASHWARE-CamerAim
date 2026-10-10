@@ -9,6 +9,7 @@ try {
     [Windows.Media.Capture.MediaCapture,Windows.Media.Capture,ContentType=WindowsRuntime] > $null
     [Windows.Media.Capture.MediaCaptureInitializationSettings,Windows.Media.Capture,ContentType=WindowsRuntime] > $null
     [Windows.Media.Capture.Frames.MediaFrameReader,Windows.Media.Capture.Frames,ContentType=WindowsRuntime] > $null
+    [Windows.Graphics.Imaging.SoftwareBitmap,Windows.Graphics.Imaging,ContentType=WindowsRuntime] > $null
     [Windows.Graphics.Imaging.BitmapEncoder,Windows.Graphics.Imaging,ContentType=WindowsRuntime] > $null
     [Windows.Storage.Streams.InMemoryRandomAccessStream,Windows.Storage.Streams,ContentType=WindowsRuntime] > $null
     [Windows.Storage.Streams.DataReader,Windows.Storage.Streams,ContentType=WindowsRuntime] > $null
@@ -78,32 +79,90 @@ public static class CameraParentLifetime {
     AwaitAction ($capture.InitializeAsync($settings))
 
     if ($Operation -eq 'modes') {
+        $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $frameSourceCount = 0
+        $streamPropertyCount = 0
         foreach ($entry in $capture.FrameSources) {
             $source = $entry.Value
             if ($source.Info.SourceKind -ne [Windows.Media.Capture.Frames.MediaFrameSourceKind]::Color) { continue }
             foreach ($format in $source.SupportedFormats) {
-                [Console]::Out.WriteLine(('MODE', $format.VideoFormat.Width, $format.VideoFormat.Height,
-                    $format.FrameRate.Numerator, $format.FrameRate.Denominator,
-                    (Encode $format.Subtype), (Encode $source.Info.Id)) -join [char]9)
+                $key = ($format.VideoFormat.Width, $format.VideoFormat.Height, $format.FrameRate.Numerator,
+                    $format.FrameRate.Denominator, $format.Subtype) -join '|'
+                if ($seen.Add($key)) {
+                    [Console]::Out.WriteLine(('MODE', $format.VideoFormat.Width, $format.VideoFormat.Height,
+                        $format.FrameRate.Numerator, $format.FrameRate.Denominator,
+                        (Encode $format.Subtype), (Encode $source.Info.Id)) -join [char]9)
+                    $frameSourceCount++
+                }
             }
         }
+        # Some UVC drivers expose their full native mode table only through the
+        # VideoDeviceController record/preview streams. Add only exact properties
+        # reported by Windows, and mark the stream used to open them.
+        foreach ($streamName in @('VideoRecord','VideoPreview')) {
+            $streamType = [Windows.Media.Capture.MediaStreamType]::$streamName
+            foreach ($property in $capture.VideoDeviceController.GetAvailableMediaStreamProperties($streamType)) {
+                $rate = $property.FrameRate
+                if (!$property.Width -or !$property.Height -or !$property.Subtype -or
+                    !$rate -or !$rate.Numerator -or !$rate.Denominator) { continue }
+                $key = ($property.Width, $property.Height, $rate.Numerator, $rate.Denominator,
+                    $property.Subtype) -join '|'
+                if ($seen.Add($key)) {
+                    [Console]::Out.WriteLine(('MODE', $property.Width, $property.Height,
+                        $rate.Numerator, $rate.Denominator, (Encode $property.Subtype),
+                        (Encode ('STREAM:' + $streamName))) -join [char]9)
+                    $streamPropertyCount++
+                }
+            }
+        }
+        [Console]::Error.WriteLine('DISCOVERY frame-source modes=' + $frameSourceCount +
+            '; additional capture-stream modes=' + $streamPropertyCount)
         [Console]::Out.WriteLine('END')
         exit 0
     }
 
     $source = $null
-    foreach ($entry in $capture.FrameSources) {
-        if ($entry.Value.Info.Id -eq $sourceId) { $source = $entry.Value; break }
+    if ($sourceId.StartsWith('STREAM:',[StringComparison]::OrdinalIgnoreCase)) {
+        $streamName = $sourceId.Substring(7)
+        try { $streamType = [Windows.Media.Capture.MediaStreamType]::$streamName }
+        catch { throw 'The selected Windows capture stream is invalid. Rescan cameras.' }
+        $property = $capture.VideoDeviceController.GetAvailableMediaStreamProperties($streamType) | Where-Object {
+            $_.Width -eq $width -and $_.Height -eq $height -and $_.FrameRate -and
+            $_.FrameRate.Numerator -eq $numerator -and $_.FrameRate.Denominator -eq $denominator -and
+            $_.Subtype -eq $subtype
+        } | Select-Object -First 1
+        if (!$property) { throw 'Windows no longer advertises this exact capture-stream mode. Rescan cameras.' }
+        AwaitAction ($capture.VideoDeviceController.SetMediaStreamPropertiesAsync($streamType,$property))
+        foreach ($entry in $capture.FrameSources) {
+            if ($entry.Value.Info.SourceKind -eq [Windows.Media.Capture.Frames.MediaFrameSourceKind]::Color -and
+                $entry.Value.Info.MediaStreamType -eq $streamType) { $source = $entry.Value; break }
+        }
+        if (!$source) {
+            foreach ($entry in $capture.FrameSources) {
+                if ($entry.Value.Info.SourceKind -eq [Windows.Media.Capture.Frames.MediaFrameSourceKind]::Color) {
+                    $source = $entry.Value
+                    break
+                }
+            }
+        }
+    } else {
+        foreach ($entry in $capture.FrameSources) {
+            if ($entry.Value.Info.Id -eq $sourceId) { $source = $entry.Value; break }
+        }
+        if ($source) {
+            $format = $source.SupportedFormats | Where-Object {
+                $_.VideoFormat.Width -eq $width -and $_.VideoFormat.Height -eq $height -and
+                $_.FrameRate.Numerator -eq $numerator -and $_.FrameRate.Denominator -eq $denominator -and
+                $_.Subtype -eq $subtype
+            } | Select-Object -First 1
+            if (!$format) { throw 'Windows no longer advertises this exact camera mode. Rescan cameras.' }
+            AwaitAction ($source.SetFormatAsync($format))
+        }
     }
     if (!$source) { throw 'The selected camera source is no longer available. Rescan cameras.' }
-    $format = $source.SupportedFormats | Where-Object {
-        $_.VideoFormat.Width -eq $width -and $_.VideoFormat.Height -eq $height -and
-        $_.FrameRate.Numerator -eq $numerator -and $_.FrameRate.Denominator -eq $denominator -and
-        $_.Subtype -eq $subtype
-    } | Select-Object -First 1
-    if (!$format) { throw 'Windows no longer advertises this exact camera mode. Rescan cameras.' }
-    AwaitAction ($source.SetFormatAsync($format))
-    $reader = AwaitResult ($capture.CreateFrameReaderAsync($source, 'BGRA8')) ([Windows.Media.Capture.Frames.MediaFrameReader])
+    # Keep negotiation in the camera's native format. Requesting BGRA8 here makes
+    # some Windows/driver combinations reject otherwise valid high-resolution MJPG modes.
+    $reader = AwaitResult ($capture.CreateFrameReaderAsync($source)) ([Windows.Media.Capture.Frames.MediaFrameReader])
     $reader.AcquisitionMode = [Windows.Media.Capture.Frames.MediaFrameReaderAcquisitionMode]::Realtime
     $status = AwaitResult ($reader.StartAsync()) ([Windows.Media.Capture.Frames.MediaFrameReaderStartStatus])
     if ($status -ne [Windows.Media.Capture.Frames.MediaFrameReaderStartStatus]::Success) {
@@ -122,7 +181,8 @@ public static class CameraParentLifetime {
             Start-Sleep -Milliseconds 10
             continue
         }
-        $bitmap = $null
+        $sourceBitmap = $null
+        $convertedBitmap = $null
         try {
             $timestamp = $reference.SystemRelativeTime
             if ($null -ne $previousTimestamp -and $timestamp -eq $previousTimestamp) {
@@ -130,18 +190,26 @@ public static class CameraParentLifetime {
                 continue
             }
             $previousTimestamp = $timestamp
-            $bitmap = $reference.VideoMediaFrame.SoftwareBitmap
-            if (!$bitmap) { throw 'Windows supplied a frame without a CPU bitmap' }
+            $sourceBitmap = $reference.VideoMediaFrame.SoftwareBitmap
+            if (!$sourceBitmap) { throw 'Windows supplied a frame without a CPU bitmap' }
             $lastFrameMs = $clock.Elapsed.TotalMilliseconds
             if ($lastFrameMs -lt $nextFrameMs) { continue }
-            if ($bitmap.PixelWidth -ne $width -or $bitmap.PixelHeight -ne $height) {
-                throw ('Camera returned ' + $bitmap.PixelWidth + 'x' + $bitmap.PixelHeight + ' instead of ' + $width + 'x' + $height)
+            if ($sourceBitmap.PixelWidth -ne $width -or $sourceBitmap.PixelHeight -ne $height) {
+                throw ('Camera returned ' + $sourceBitmap.PixelWidth + 'x' + $sourceBitmap.PixelHeight + ' instead of ' + $width + 'x' + $height)
+            }
+            if ($sourceBitmap.BitmapPixelFormat -eq [Windows.Graphics.Imaging.BitmapPixelFormat]::Bgra8) {
+                $bitmapForEncoding = $sourceBitmap
+            } else {
+                $convertedBitmap = [Windows.Graphics.Imaging.SoftwareBitmap]::Convert($sourceBitmap,
+                    [Windows.Graphics.Imaging.BitmapPixelFormat]::Bgra8,
+                    [Windows.Graphics.Imaging.BitmapAlphaMode]::Ignore)
+                $bitmapForEncoding = $convertedBitmap
             }
             $stream = [Windows.Storage.Streams.InMemoryRandomAccessStream]::new()
             try {
                 $encoder = AwaitResult ([Windows.Graphics.Imaging.BitmapEncoder]::CreateAsync(
                     [Windows.Graphics.Imaging.BitmapEncoder]::JpegEncoderId,$stream)) ([Windows.Graphics.Imaging.BitmapEncoder])
-                $encoder.SetSoftwareBitmap($bitmap)
+                $encoder.SetSoftwareBitmap($bitmapForEncoding)
                 AwaitAction ($encoder.FlushAsync())
                 $stream.Seek(0)
                 $dataReader = [Windows.Storage.Streams.DataReader]::new($stream)
@@ -159,7 +227,8 @@ public static class CameraParentLifetime {
             } finally { $stream.Dispose() }
             $nextFrameMs = $lastFrameMs + (1000.0 / $previewFps)
         } finally {
-            if ($bitmap) { $bitmap.Dispose() }
+            if ($convertedBitmap) { $convertedBitmap.Dispose() }
+            if ($sourceBitmap) { $sourceBitmap.Dispose() }
             $reference.Dispose()
         }
     }

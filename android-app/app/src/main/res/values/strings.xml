@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">G-BASHWARE CamerAim</string>
+    <string name="monitoring_channel">CamerAim praćenje</string>
+    <string name="event_channel">CamerAim događaji</string>
+</resources>

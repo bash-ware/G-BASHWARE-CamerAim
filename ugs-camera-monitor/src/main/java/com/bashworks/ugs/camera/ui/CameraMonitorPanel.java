@@ -8,7 +8,6 @@ import com.bashworks.ugs.camera.machine.MachineState;
 import com.bashworks.ugs.camera.model.CameraOffset;
 import com.bashworks.ugs.camera.model.LengthUnit;
 import com.bashworks.ugs.camera.model.TargetPosition;
-import org.openide.util.NbPreferences;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
@@ -36,13 +35,80 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private static final String PREF_Y = "offset.y";
     private static final String PREF_UNIT = "offset.unit";
     private static final String PREF_FEED = "offset.feed";
+    private static final String PREF_AIM_DROP = "aimHeight.drop";
+    private static final String PREF_HOMING_CMD = "aimHeight.homingCommand";
+    private static final double DEFAULT_AIM_DROP = 50.0;
+    private static final String DEFAULT_HOMING_CMD = "$HZ";
     private static final String PREF_ZOOM = "camera.zoom";
     private static final String PREF_ROTATION = "camera.rotation";
     private static final String PREF_FPS = "camera.fps";
 
     private final MachineGateway machine;
     private final CameraCaptureService camera = new CameraCaptureService();
-    private final Preferences preferences = NbPreferences.forModule(CameraMonitorPanel.class);
+    private final Preferences preferences = initPreferences();
+
+    private static Preferences initPreferences() {
+        try {
+            Class<?> nbPrefClass = Class.forName("org.openide.util.NbPreferences");
+            return (Preferences) nbPrefClass.getMethod("forModule", Class.class).invoke(null, CameraMonitorPanel.class);
+        } catch (Throwable ignored) {
+        }
+        try {
+            return Preferences.userNodeForPackage(CameraMonitorPanel.class);
+        } catch (Throwable ignored) {
+            return new InMemoryPreferences();
+        }
+    }
+
+    private static final class InMemoryPreferences extends java.util.prefs.AbstractPreferences {
+        private final java.util.Map<String, String> map = new java.util.HashMap<>();
+
+        InMemoryPreferences() {
+            super(null, "");
+        }
+
+        @Override
+        protected void putSpi(String key, String value) {
+            map.put(key, value);
+        }
+
+        @Override
+        protected String getSpi(String key) {
+            return map.get(key);
+        }
+
+        @Override
+        protected void removeSpi(String key) {
+            map.remove(key);
+        }
+
+        @Override
+        protected void removeNodeSpi() {
+        }
+
+        @Override
+        protected String[] keysSpi() {
+            return map.keySet().toArray(new String[0]);
+        }
+
+        @Override
+        protected String[] childrenNamesSpi() {
+            return new String[0];
+        }
+
+        @Override
+        protected java.util.prefs.AbstractPreferences childSpi(String name) {
+            return this;
+        }
+
+        @Override
+        protected void syncSpi() {
+        }
+
+        @Override
+        protected void flushSpi() {
+        }
+    }
     private final CameraImagePanel imagePanel = new CameraImagePanel();
     private final JComboBox<CameraDevice> cameras = new JComboBox<>();
     private final JComboBox<Dimension> sizes = new JComboBox<>();
@@ -57,11 +123,16 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private final JSpinner offsetY;
     private final JComboBox<LengthUnit> unit = new JComboBox<>(LengthUnit.values());
     private final JSpinner feedRate;
+    private final JSpinner aimDrop;
+    private final JButton aimHeightButton = new JButton("Aim height");
+    private final JButton configHomingButton = new JButton("⚙ Cmd");
     private final JLabel movementPreview = new JLabel();
     private final JLabel positionLabel = new JLabel("Position: —");
     private final JLabel machineStatus = new JLabel("UGS: —");
     private final JButton moveButton = new JButton("Move tool to crosshair");
     private final JButton zeroButton = new JButton("Set XY zero here");
+    private String homingCommand;
+    private volatile boolean aimHeightInProgress;
     private LengthUnit lastUnit;
     private boolean updatingCameraModes;
 
@@ -70,6 +141,8 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         offsetX = new JSpinner(new SpinnerNumberModel(preferences.getDouble(PREF_X, 0.0), -100000.0, 100000.0, 0.01));
         offsetY = new JSpinner(new SpinnerNumberModel(preferences.getDouble(PREF_Y, 0.0), -100000.0, 100000.0, 0.01));
         feedRate = new JSpinner(new SpinnerNumberModel(preferences.getDouble(PREF_FEED, 500.0), 0.01, 100000.0, 10.0));
+        homingCommand = preferences.get(PREF_HOMING_CMD, DEFAULT_HOMING_CMD);
+        aimDrop = new JSpinner(new SpinnerNumberModel(preferences.getDouble(PREF_AIM_DROP, DEFAULT_AIM_DROP), 0.0, 100000.0, 1.0));
         unit.setSelectedItem(readUnit());
         lastUnit = (LengthUnit) unit.getSelectedItem();
         zoom.setSelectedItem(readZoom());
@@ -86,6 +159,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
 
         wireEvents();
         installResolutionRenderer();
+        updateAimHeightTooltips();
         updateMovementPreview();
         refreshMachineState();
         scanCameras();
@@ -132,7 +206,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
 
     private JPanel createPositionControls() {
         JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Crosshair-to-tool movement"));
+        panel.setBorder(BorderFactory.createTitledBorder("Crosshair-to-tool movement & aim height"));
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(3, 4, 3, 4);
         c.gridy = 0;
@@ -155,8 +229,21 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         offsetX.setToolTipText(offsetHelp);
         offsetY.setToolTipText(offsetHelp);
         moveButton.setToolTipText("Sends one relative XY jog through UGS using the displayed offset, without moving Z.");
+        aimDrop.setToolTipText("Distance to lower Z after homing to reach optical aiming height.");
 
         c.gridy = 1;
+        c.gridx = 0;
+        panel.add(new JLabel("Aim drop:"), c);
+        c.gridx = 1;
+        panel.add(aimDrop, c);
+        c.gridx = 2;
+        c.gridwidth = 2;
+        panel.add(aimHeightButton, c);
+        c.gridx = 4;
+        c.gridwidth = 1;
+        panel.add(configHomingButton, c);
+
+        c.gridy = 2;
         c.gridx = 0;
         c.gridwidth = 4;
         c.fill = GridBagConstraints.HORIZONTAL;
@@ -165,11 +252,11 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         c.gridwidth = 3;
         panel.add(positionLabel, c);
 
-        c.gridy = 2;
+        c.gridy = 3;
         c.gridx = 0;
         c.gridwidth = 2;
         c.fill = GridBagConstraints.NONE;
-        JButton save = new JButton("Save offset");
+        JButton save = new JButton("Save settings");
         save.addActionListener(event -> saveOffset());
         panel.add(save, c);
         c.gridx = 2;
@@ -198,9 +285,12 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         frameRates.addActionListener(event -> saveFrameRate());
         offsetX.addChangeListener(event -> updateMovementPreview());
         offsetY.addChangeListener(event -> updateMovementPreview());
+        aimDrop.addChangeListener(event -> updateAimHeightTooltips());
         unit.addActionListener(event -> convertDisplayedUnit());
         moveButton.addActionListener(event -> moveTool());
         zeroButton.addActionListener(event -> setXyZero());
+        aimHeightButton.addActionListener(event -> goToAimHeight());
+        configHomingButton.addActionListener(event -> configureHomingCommand());
         camera.addStatusListener(status -> SwingUtilities.invokeLater(() -> {
             cameraStatus.setText(status);
             boolean running = camera.isRunning();
@@ -360,8 +450,10 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         offsetX.setValue(lastUnit.convert(((Number) offsetX.getValue()).doubleValue(), selected));
         offsetY.setValue(lastUnit.convert(((Number) offsetY.getValue()).doubleValue(), selected));
         feedRate.setValue(lastUnit.convert(((Number) feedRate.getValue()).doubleValue(), selected));
+        aimDrop.setValue(lastUnit.convert(((Number) aimDrop.getValue()).doubleValue(), selected));
         lastUnit = selected;
         updateMovementPreview();
+        updateAimHeightTooltips();
     }
 
     private void saveOffset() {
@@ -370,7 +462,9 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         preferences.putDouble(PREF_Y, offset.y());
         preferences.put(PREF_UNIT, offset.unit().name());
         preferences.putDouble(PREF_FEED, ((Number) feedRate.getValue()).doubleValue());
-        machineStatus.setText("Offset saved");
+        preferences.putDouble(PREF_AIM_DROP, ((Number) aimDrop.getValue()).doubleValue());
+        preferences.put(PREF_HOMING_CMD, homingCommand);
+        machineStatus.setText("Settings saved");
     }
 
     private void moveTool() {
@@ -423,9 +517,14 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
 
     public void refreshMachineState() {
         MachineState state = machine.state();
-        moveButton.setEnabled(state.canPosition());
-        zeroButton.setEnabled(state.canPosition());
-        machineStatus.setText(state.canPosition() ? "UGS: Idle" : "UGS: " + state.blockedReason());
+        boolean canMove = state.canPosition() && !aimHeightInProgress;
+        moveButton.setEnabled(canMove);
+        zeroButton.setEnabled(canMove);
+        aimHeightButton.setEnabled(canMove);
+        configHomingButton.setEnabled(!aimHeightInProgress);
+        if (!aimHeightInProgress) {
+            machineStatus.setText(state.canPosition() ? "UGS: Idle" : "UGS: " + state.blockedReason());
+        }
         refreshPositionPreview();
     }
 
@@ -461,6 +560,82 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         } catch (IllegalArgumentException ignored) {
             return CameraRotation.DEG_0;
         }
+    }
+
+    private void updateAimHeightTooltips() {
+        String dropStr = String.format(Locale.US, "%.2f %s", ((Number) aimDrop.getValue()).doubleValue(), unit.getSelectedItem());
+        aimHeightButton.setToolTipText("Homes Z via '" + homingCommand + "', then lowers Z by " + dropStr + " to reach aim height.");
+        configHomingButton.setToolTipText("Configure Z homing command (current: '" + homingCommand + "')");
+    }
+
+    private void configureHomingCommand() {
+        String input = JOptionPane.showInputDialog(
+                this,
+                "Z homing command (e.g. $HZ, $H, or G53 G0 Z0):",
+                homingCommand);
+        if (input != null && !input.trim().isEmpty()) {
+            homingCommand = input.trim();
+            preferences.put(PREF_HOMING_CMD, homingCommand);
+            updateAimHeightTooltips();
+            machineStatus.setText("Homing cmd: " + homingCommand);
+        }
+    }
+
+    private void goToAimHeight() {
+        if (aimHeightInProgress) return;
+        MachineState state = machine.state();
+        if (!state.canPosition()) {
+            showError(state.blockedReason());
+            refreshMachineState();
+            return;
+        }
+
+        double drop = ((Number) aimDrop.getValue()).doubleValue();
+        LengthUnit currentUnit = (LengthUnit) unit.getSelectedItem();
+        double feed = ((Number) feedRate.getValue()).doubleValue();
+
+        String confirmMsg = String.format(
+                Locale.US,
+                "Move to Aim Height:\n1. Rehome Z to top using '%s'\n2. Lower Z by %.3f %s (feed %.1f)\n\nEnsure tool and workpiece have safe travel clearance.",
+                homingCommand, drop, currentUnit, feed);
+
+        int answer = JOptionPane.showConfirmDialog(
+                this,
+                confirmMsg,
+                "Confirm Aim Height",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+        if (answer != JOptionPane.OK_OPTION) return;
+
+        aimHeightInProgress = true;
+        refreshMachineState();
+        machineStatus.setText("Starting Z homing…");
+
+        new Thread(() -> {
+            try {
+                machine.moveToAimHeight(
+                        homingCommand,
+                        drop,
+                        currentUnit,
+                        feed,
+                        status -> SwingUtilities.invokeLater(() -> machineStatus.setText(status)));
+                SwingUtilities.invokeLater(() -> {
+                    machineStatus.setText("Aim height reached");
+                    refreshMachineState();
+                });
+            } catch (Exception error) {
+                SwingUtilities.invokeLater(() -> {
+                    showError("Aim height failed: " + error.getMessage());
+                    machineStatus.setText("Aim height failed");
+                    refreshMachineState();
+                });
+            } finally {
+                SwingUtilities.invokeLater(() -> {
+                    aimHeightInProgress = false;
+                    refreshMachineState();
+                });
+            }
+        }, "CamerAim-AimHeight").start();
     }
 
     private void showError(String message) {

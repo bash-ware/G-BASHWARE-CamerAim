@@ -1,0 +1,10 @@
+{
+  "apiVersion": "1.0",
+  "eventId": "dad34c15-57b0-4dad-8263-d02140f59ed3",
+  "machineId": "workshop-cnc-1",
+  "runId": "6cdd4674-ca58-42b9-9083-b4bd4599a194",
+  "occurredAt": "2026-09-09T09:12:18Z",
+  "kind": "completed",
+  "detail": "UGS reported controller-confirmed program completion."
+}
+
