@@ -58,9 +58,18 @@ public final class UgsMachineGateway implements MachineGateway {
             throw new IllegalArgumentException("Jog feed must be greater than zero.");
         }
 
+        TargetPosition start = machinePosition();
+        TargetPosition target = movement.targetFrom(start.x(), start.y(), start.unit());
         backend.adjustManualLocation(
                 new PartialPosition(movement.x(), movement.y(), toUgsUnit(movement.unit())),
                 feedRate);
+
+        // Sending a jog returns before motion starts. Require the target position
+        // as well as Idle so a stale Idle report cannot zero the starting point.
+        double distance = Math.hypot(movement.x(), movement.y());
+        long timeoutMs = (long) Math.ceil(60000.0 * distance / feedRate) + 30000;
+        waitForTarget(target, start, timeoutMs);
+        setWorkXyZero();
     }
 
     @Override
@@ -166,6 +175,37 @@ public final class UgsMachineGateway implements MachineGateway {
         } finally {
             backend.removeUGSEventListener(listener);
         }
+    }
+
+    private void waitForTarget(TargetPosition target, TargetPosition start, long timeoutMs) throws Exception {
+        double distanceMm = target.unit().convert(Math.hypot(target.x() - start.x(), target.y() - start.y()), LengthUnit.MM);
+        double toleranceMm = Math.min(0.002, distanceMm / 2.0);
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        boolean motionObserved = false;
+        while (System.nanoTime() < deadline) {
+            MachineState current = state();
+            ControllerState controllerState = backend.getControllerState();
+            if (!current.connected() || current.sendingFile() || current.paused()
+                    || (controllerState != ControllerState.IDLE && controllerState != ControllerState.JOG
+                    && controllerState != ControllerState.RUN)) {
+                throw new IllegalStateException("Camera move interrupted; XY zero was not set.");
+            }
+            TargetPosition position = machinePosition();
+            double xMm = position.unit().convert(position.x(), LengthUnit.MM);
+            double yMm = position.unit().convert(position.y(), LengthUnit.MM);
+            boolean atTarget = Math.abs(xMm - target.unit().convert(target.x(), LengthUnit.MM)) <= toleranceMm
+                    && Math.abs(yMm - target.unit().convert(target.y(), LengthUnit.MM)) <= toleranceMm;
+            if (current.canPosition()) {
+                if (atTarget) return;
+                if (motionObserved) {
+                    throw new IllegalStateException("Camera move stopped before the target; XY zero was not set.");
+                }
+            } else {
+                motionObserved = true;
+            }
+            Thread.sleep(50);
+        }
+        throw new TimeoutException("Camera target was not reached; XY zero was not set.");
     }
 
     private void waitForIdle(long timeoutMs) throws Exception {

@@ -96,6 +96,7 @@ public final class CameraMonitorStandalone {
                     movement.x(), movement.y(), feedRate, movement.unit());
             this.x += movement.x();
             this.y += movement.y();
+            setWorkXyZero();
         }
 
         @Override

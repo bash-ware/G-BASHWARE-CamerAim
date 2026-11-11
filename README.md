@@ -8,7 +8,7 @@ G-BASHWARE CamerAim is a camera positioning plugin for [Universal Gcode Sender P
 
 The current release targets **UGS Platform 2.1.6** and **Java 17 or newer**. The camera connects directly to the computer running UGS.
 
-The published UGS plugin is **v2.2.1**. Development of the local monitoring
+The published UGS plugin is **v2.2.2**. Development of the local monitoring
 system now lives in the same repository:
 
 - shared/ — versioned API v1 contract and fixtures
@@ -31,16 +31,16 @@ These monitoring components are pre-release companion services.
 - Persistent X/Y camera-to-tool offset, units, and jog feed
 - Exact relative XY movement from the crosshair target to the tool
 - Live machine coordinates and calculated tool target
-- A separate command to set the current work X/Y zero
+- Automatically sets work X/Y zero after the tool reaches the camera target
 - Aim Height: rehome Z to maximum height and lower by a configurable distance (default 50 mm) for consistent optical focal distance
 - Movement lockout unless UGS is connected, Idle, and able to jog
 - Built-in G-BASHWARE update-center registration
 
-Version 2.2.1 requires Windows 10 or 11. It no longer loads the legacy OpenIMAJ/videoInput native camera library into UGS.
+Version 2.2.2 requires Windows 10 or 11. It no longer loads the legacy OpenIMAJ/videoInput native camera library into UGS.
 
 ## Install
 
-1. Download the latest `G-BASHWARE-CamerAim-2.2.1_for-UGS-2.1.6.nbm` from [Releases](https://github.com/bash-ware/G-BASHWARE-CamerAim/releases/latest).
+1. Download the latest `G-BASHWARE-CamerAim-2.2.2_for-UGS-2.1.6.nbm` from [Releases](https://github.com/bash-ware/G-BASHWARE-CamerAim/releases/latest).
 2. In UGS Platform, open **Tools → Plugins → Downloaded**.
 3. Choose **Add Plugins**, select the `.nbm` file, and complete the installer.
 4. Restart UGS if requested.
@@ -57,7 +57,7 @@ Place a reference mark under the crosshair. Enter the relative move the tool mus
 - `X +12.000 mm` moves the tool 12 mm in positive X.
 - `Y -3.500 mm` moves the tool 3.5 mm in negative Y.
 
-Raise Z to a verified safe height and check the full XY path before accepting the movement dialog. CamerAim never starts the spindle and never changes Z.
+Raise Z to a verified safe height and check the full XY path before accepting the movement dialog. The crosshair movement never starts the spindle or changes Z. Aim Height is a separate Z-positioning action.
 
 ## Build
 

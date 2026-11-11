@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.2 - 2026-11-11
+
+- Automatically set work X/Y zero after the tool reaches the calibrated camera target and UGS reports Idle; leave Z unchanged.
+- Refuse zeroing after an interrupted, rejected, disconnected, or alarmed camera move.
+- Run positioning in the background and disable conflicting positioning actions while it completes.
+- Remove the separate manual XY-zero button and add seven positioning regression tests.
+
+
 ## 2.2.1 - 2026-10-10
 
 - Add dedicated **Lock parameters** button to protect calibrated XY offsets, feed rate, and aim drop from accidental adjustments.

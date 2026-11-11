@@ -10,7 +10,7 @@
 ## Install the NBM
 
 1. Close any active CNC job and leave the controller disconnected or Idle.
-2. Download `G-BASHWARE-CamerAim-2.2.1_for-UGS-2.1.6.nbm` from the latest GitHub Release.
+2. Download `G-BASHWARE-CamerAim-2.2.2_for-UGS-2.1.6.nbm` from the latest GitHub Release.
 3. In UGS, open **Tools → Plugins → Downloaded**.
 4. Select **Add Plugins**, choose the downloaded NBM, then follow the installer.
 5. Restart UGS if requested.
@@ -29,7 +29,7 @@ Installing this branded release over the earlier Camera Monitor prototype update
 
 ### Camera and resolution notes
 
-Version 2.2.1 reads formats directly from Windows MediaCapture. The resolution list follows the selected camera and computer instead of a hard-coded model profile. CamerAim chooses a valid native format automatically and applies **Preview FPS** only as the displayed-frame limit. This permits a camera that requires 30 FPS for a 5 MP native mode to be displayed at 5 or 10 FPS without asking the driver for an invalid combination.
+Version 2.2.2 reads formats directly from Windows MediaCapture. The resolution list follows the selected camera and computer instead of a hard-coded model profile. CamerAim chooses a valid native format automatically and applies **Preview FPS** only as the displayed-frame limit. This permits a camera that requires 30 FPS for a 5 MP native mode to be displayed at 5 or 10 FPS without asking the driver for an invalid combination.
 
 Camera work runs in a separate helper process. A native camera or driver failure ends that helper and reports an error in the panel without taking down UGS. Use **Copy diagnostics** and send the copied text when troubleshooting another computer. **Rescan cameras** refreshes both devices and formats.
 
@@ -48,7 +48,7 @@ The offset means “how the tool must move when the target is under the crosshai
 
 ## First movement test
 
-Perform the first test with the spindle off, Z raised, low jog feed, and scrap material. Put the mark under the crosshair, confirm that the displayed **Tool target** is inside the machine travel, then click **Move tool to crosshair**. Cancel the confirmation if the displayed relative move or target is unexpected.
+Perform the first test with the spindle off, Z raised, low jog feed, and scrap material. Put the mark under the crosshair, confirm that the displayed **Tool target** is inside the machine travel, then click **Move tool to crosshair**. Check the displayed relative move and target before clicking. Once the tool reaches the target and UGS reports Idle, CamerAim automatically sets work X and Y to zero. Z is unchanged. An interrupted or failed move does not set XY zero.
 
 The positioning commands are disabled while a job is running or paused, while the machine is not Idle, when UGS is disconnected, or when the controller does not support UGS jog commands.
 

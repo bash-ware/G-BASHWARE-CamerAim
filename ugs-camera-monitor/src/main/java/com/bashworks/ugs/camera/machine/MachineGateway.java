@@ -9,6 +9,7 @@ import java.util.function.Consumer;
 public interface MachineGateway {
     MachineState state();
     TargetPosition machinePosition();
+    /** Moves to the camera target and sets work XY zero after arrival. Blocks until complete. */
     void moveToolToCrosshair(CameraOffset movement, double feedRate) throws Exception;
     void setWorkXyZero() throws Exception;
     void moveToAimHeight(String homingCommand, double dropDistance, LengthUnit unit, double feedRate, Consumer<String> statusListener) throws Exception;

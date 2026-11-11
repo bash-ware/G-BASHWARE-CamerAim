@@ -134,9 +134,9 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private final JLabel positionLabel = new JLabel("Position: —");
     private final JLabel machineStatus = new JLabel("UGS: —");
     private final JButton moveButton = new JButton("Move tool to crosshair");
-    private final JButton zeroButton = new JButton("Set XY zero here");
     private String homingCommand;
     private volatile boolean aimHeightInProgress;
+    private boolean positioningInProgress;
     private LengthUnit lastUnit;
     private boolean updatingCameraModes;
 
@@ -233,7 +233,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         String offsetHelp = "Exact relative tool movement when the target is under the crosshair; signs are not inverted.";
         offsetX.setToolTipText(offsetHelp);
         offsetY.setToolTipText(offsetHelp);
-        moveButton.setToolTipText("Sends one relative XY jog through UGS using the displayed offset, without moving Z.");
+        moveButton.setToolTipText("Moves the tool by the displayed XY offset, then automatically sets work X/Y zero at the target.");
         aimDrop.setToolTipText("Distance to lower Z after homing to reach optical aiming height.");
 
         c.gridy = 1;
@@ -269,10 +269,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         c.gridwidth = 2;
         panel.add(moveButton, c);
         c.gridx = 4;
-        c.gridwidth = 2;
-        panel.add(zeroButton, c);
-        c.gridx = 6;
-        c.gridwidth = 1;
+        c.gridwidth = 3;
         panel.add(machineStatus, c);
         return panel;
     }
@@ -296,7 +293,6 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         saveButton.addActionListener(event -> saveOffset());
         lockParametersButton.addActionListener(event -> toggleParametersLock());
         moveButton.addActionListener(event -> moveTool());
-        zeroButton.addActionListener(event -> setXyZero());
         aimHeightButton.addActionListener(event -> goToAimHeight());
         configHomingButton.addActionListener(event -> configureHomingCommand());
         camera.addStatusListener(status -> SwingUtilities.invokeLater(() -> {
@@ -476,6 +472,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     }
 
     private void moveTool() {
+        if (positioningInProgress || aimHeightInProgress) return;
         CameraOffset offset = currentOffset();
         MachineState state = machine.state();
         if (!state.canPosition()) {
@@ -483,37 +480,27 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
             refreshMachineState();
             return;
         }
-
-        try {
-            machine.moveToolToCrosshair(offset, ((Number) feedRate.getValue()).doubleValue());
-            machineStatus.setText("Move sent to UGS");
-        } catch (Exception error) {
-            showError(error.getMessage());
-        }
+        double feed = ((Number) feedRate.getValue()).doubleValue();
+        positioningInProgress = true;
         refreshMachineState();
-    }
-
-    private void setXyZero() {
-        MachineState state = machine.state();
-        if (!state.canPosition()) {
-            showError(state.blockedReason());
-            refreshMachineState();
-            return;
-        }
-        int answer = JOptionPane.showConfirmDialog(
-                this,
-                "Set the current work position to X=0 and Y=0?\nThe Z coordinate will not change.",
-                "Confirm XY zero",
-                JOptionPane.OK_CANCEL_OPTION,
-                JOptionPane.WARNING_MESSAGE);
-        if (answer != JOptionPane.OK_OPTION) return;
-        try {
-            machine.setWorkXyZero();
-            machineStatus.setText("XY work zero set");
-        } catch (Exception error) {
-            showError(error.getMessage());
-        }
-        refreshMachineState();
+        machineStatus.setText("Moving to camera target, then setting XY zero…");
+        new Thread(() -> {
+            String result;
+            try {
+                machine.moveToolToCrosshair(offset, feed);
+                result = "Camera target reached; XY work zero set";
+            } catch (Exception error) {
+                String message = "Camera positioning failed: " + error.getMessage();
+                SwingUtilities.invokeLater(() -> showError(message));
+                result = "Camera positioning failed";
+            }
+            String status = result;
+            SwingUtilities.invokeLater(() -> {
+                positioningInProgress = false;
+                refreshMachineState();
+                machineStatus.setText(status);
+            });
+        }, "CamerAim-Positioning").start();
     }
 
     private void toggleParametersLock() {
@@ -544,12 +531,11 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
 
     public void refreshMachineState() {
         MachineState state = machine.state();
-        boolean canMove = state.canPosition() && !aimHeightInProgress;
+        boolean canMove = state.canPosition() && !aimHeightInProgress && !positioningInProgress;
         moveButton.setEnabled(canMove);
-        zeroButton.setEnabled(canMove);
         aimHeightButton.setEnabled(canMove);
         configHomingButton.setEnabled(!aimHeightInProgress && !lockParametersButton.isSelected());
-        if (!aimHeightInProgress) {
+        if (!aimHeightInProgress && !positioningInProgress) {
             machineStatus.setText(state.canPosition() ? "UGS: Idle" : "UGS: " + state.blockedReason());
         }
         refreshPositionPreview();
@@ -609,7 +595,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     }
 
     private void goToAimHeight() {
-        if (aimHeightInProgress) return;
+        if (aimHeightInProgress || positioningInProgress) return;
         MachineState state = machine.state();
         if (!state.canPosition()) {
             showError(state.blockedReason());

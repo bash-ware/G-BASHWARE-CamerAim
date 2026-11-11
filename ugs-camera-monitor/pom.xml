@@ -12,7 +12,7 @@
     </parent>
 
     <artifactId>ugs-platform-plugin-camera-monitor</artifactId>
-    <version>2.2.1</version>
+    <version>2.2.2</version>
     <packaging>nbm</packaging>
     <name>G-BASHWARE CamerAim</name>
     <description>Camera crosshair and calibrated camera-to-tool XY positioning for UGS Platform</description>
@@ -40,7 +40,7 @@
     <properties>
         <jacoco.version>0.8.12</jacoco.version>
         <ugs.version>2.0-SNAPSHOT</ugs.version>
-        <ugs.modules.specification.version>2.2.1</ugs.modules.specification.version>
+        <ugs.modules.specification.version>2.2.2</ugs.modules.specification.version>
     </properties>
 
     <build>
@@ -70,6 +70,13 @@
     </build>
 
     <dependencies>
+        <!-- UGS supplies this at runtime; gateway tests instantiate its position models. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>${commons-lang3.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>ugs-platform-ugslib</artifactId>
