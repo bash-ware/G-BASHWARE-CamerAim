@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.1 - 2026-11-21
+
+- Replace separate restore/travel actions with **Re-reference XY & move to X0 Y0**: confirm the recovered origin, then immediately jog XY to it.
+- Remove recovery's safe-Z setting, trust checkbox, and automatic Z lift. Assume the current Z is safe and leave Z position and zero unchanged.
+- Retain camera-to-tool offset compensation, stale-reference checks, coordinate confirmation, and jog cancellation.
+
 ## 2.3.0 - 2026-11-21
 
 - Recover a lost job XY origin by aligning the camera to an existing feature and selecting its matching point in the active job's top-down preview.

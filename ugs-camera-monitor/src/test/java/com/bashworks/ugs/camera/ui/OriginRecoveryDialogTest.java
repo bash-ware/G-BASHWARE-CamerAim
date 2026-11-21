@@ -20,63 +20,51 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.prefs.Preferences;
 
 import static org.junit.Assert.*;
 
 public class OriginRecoveryDialogTest {
     @Rule public TemporaryFolder temp = new TemporaryFolder();
 
-    @Test public void armsOnlyAfterClickRestoresWithoutMotionAndRequiresExplicitSafeZTrust() throws Exception {
+    @Test public void pointSelectionArmsSingleButtonThatRestoresThenMovesXY() throws Exception {
+        exercise(false);
+    }
+
+    @Test public void rejectedReferenceNeverStartsXY() throws Exception {
+        exercise(true);
+    }
+
+    private void exercise(boolean reject) throws Exception {
         Assume.assumeFalse(GraphicsEnvironment.isHeadless());
         Path file = temp.newFile("demonstration-job.nc").toPath();
         Files.writeString(file, "G21 G54 G90\nG0 X0 Y0\nG1 X80 Y0 F200\nG1 X80 Y50\nG1 X0 Y50\nG1 X0 Y0\nG0 X25 Y25\nG2 X25 Y25 I-5 J0\n");
         JobPreview job = new JobPreviewLoader().loadText(file);
         FakeMachine fake = new FakeMachine(job);
+        fake.reject = reject;
         AtomicReference<OriginRecoveryDialog> handle = new AtomicReference<>();
-        Preferences prefs = new java.util.prefs.AbstractPreferences(null, "") {
-            final java.util.Map<String, String> values = new java.util.HashMap<>();
-            @Override protected void putSpi(String key, String value) { values.put(key, value); }
-            @Override protected String getSpi(String key) { return values.get(key); }
-            @Override protected void removeSpi(String key) { values.remove(key); }
-            @Override protected void removeNodeSpi() { values.clear(); }
-            @Override protected String[] keysSpi() { return values.keySet().toArray(new String[0]); }
-            @Override protected String[] childrenNamesSpi() { return new String[0]; }
-            @Override protected java.util.prefs.AbstractPreferences childSpi(String name) { throw new UnsupportedOperationException(); }
-            @Override protected void syncSpi() { }
-            @Override protected void flushSpi() { }
-        };
         try {
             SwingUtilities.invokeAndWait(() -> {
                 OriginRecoveryDialog dialog = new OriginRecoveryDialog(null, fake, job,
-                        new CameraOffset(30, -10, LengthUnit.MM), 500, prefs, () -> { });
+                        new CameraOffset(30, -10, LengthUnit.MM), 500, () -> { });
                 handle.set(dialog);
-                JButton restore = find(dialog, JButton.class, "Re-reference XY");
-                JButton move = find(dialog, JButton.class, "Raise Z, then move to X0 Y0");
+                JButton restore = find(dialog, JButton.class, "Re-reference XY & move to X0 Y0");
                 assertFalse(restore.isEnabled());
-                assertFalse(move.isEnabled());
+                assertNull(find(dialog, JSpinner.class, null));
+                assertEquals(0, fake.restores);
+                assertEquals(0, fake.moves);
                 JobPreviewPanel preview = find(dialog, JobPreviewPanel.class, null);
                 preview.fit();
                 Point2D point = preview.toScreen(new JobPreview.Point(80, 50));
                 preview.dispatchEvent(new MouseEvent(preview, MouseEvent.MOUSE_CLICKED, 0, 0,
                         (int) point.getX(), (int) point.getY(), 1, false, MouseEvent.BUTTON1));
                 assertTrue(restore.isEnabled());
+                assertEquals(0, fake.restores);
+                assertEquals(0, fake.moves);
                 save(dialog, "origin-recovery-armed.png");
                 restore.doClick();
             });
-            await(() -> fake.restores == 1 && !find(handle.get(), JButton.class, "Re-reference XY").isEnabled()
-                    && find(handle.get(), JCheckBox.class, "Machine Z is referenced, +Z is up, and XY travel is clear").isEnabled());
-            SwingUtilities.invokeAndWait(() -> {
-                OriginRecoveryDialog dialog = handle.get();
-                assertEquals(0, fake.moves);
-                JButton move = find(dialog, JButton.class, "Raise Z, then move to X0 Y0");
-                assertFalse(move.isEnabled());
-                find(dialog, JCheckBox.class, "Machine Z is referenced, +Z is up, and XY travel is clear").doClick();
-                assertTrue(move.isEnabled());
-                save(dialog, "origin-recovery-restored.png");
-                move.doClick();
-            });
-            await(() -> fake.moves == 1);
+            await(() -> fake.restores == 1 && !find(handle.get(), JButton.class, "Stop move").isEnabled());
+            assertEquals(reject ? 0 : 1, fake.moves);
         } finally {
             SwingUtilities.invokeAndWait(() -> { if (handle.get() != null) handle.get().requestClose(); });
         }
@@ -123,6 +111,7 @@ public class OriginRecoveryDialogTest {
     private static final class FakeMachine implements MachineGateway {
         final JobPreview job;
         volatile int restores, moves;
+        boolean reject;
         FakeMachine(JobPreview job) { this.job = job; }
         @Override public MachineState state() { return new MachineState(true, true, false, false, true); }
         @Override public TargetPosition machinePosition() { return new TargetPosition(100, 200, LengthUnit.MM); }
@@ -133,11 +122,12 @@ public class OriginRecoveryDialogTest {
         @Override public boolean referenceValid(JobPreview job, Anchor anchor) { return true; }
         @Override public Restored restoreOrigin(JobPreview job, Anchor anchor, JobPreview.Point point, CameraOffset offset) {
             restores++;
+            if (reject) throw new IllegalStateException("Controller rejected origin change");
             assertEquals(new JobPreview.Point(80, 50), point);
             return new Restored(job, OriginRecovery.recoveredOrigin(anchor, point, offset), "G54", 0, this);
         }
         @Override public boolean restoredOriginValid(Restored restored) { return true; }
-        @Override public void moveToRestoredOrigin(Restored restored, double z, double feed, Consumer<String> status) { moves++; }
+        @Override public void moveToRestoredOrigin(Restored restored, double feed, Consumer<String> status) { assertEquals(1, restores); moves++; }
         @Override public void cancelReferenceMove() { }
     }
 }

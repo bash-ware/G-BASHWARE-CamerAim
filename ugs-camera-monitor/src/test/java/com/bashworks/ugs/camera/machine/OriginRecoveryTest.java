@@ -50,29 +50,17 @@ public class OriginRecoveryTest {
         assertEquals(20, f.work().z(), 1e-8);
     }
 
-    @Test public void liftsBeforeXYAndNeverChangesZReference() throws Exception {
+    @Test public void movesDirectlyToOriginUsingXYOnlyAndPreservesZ() throws Exception {
         Fixture f = fixture();
         Restored restored = f.restore();
-        f.gateway.moveToRestoredOrigin(restored, -5, 1000, s -> { });
-        assertEquals(2, f.jogs.size());
-        assertTrue(f.jogs.get(0).hasZ());
-        assertFalse(f.jogs.get(0).hasX());
-        assertEquals(25, f.jogs.get(0).getZ(), 0);
-        assertFalse(f.jogs.get(1).hasZ());
-        assertEquals(10, f.jogs.get(1).getX(), 1e-9);
-        assertEquals(-25, f.jogs.get(1).getY(), 1e-9);
-        assertTrue(new Pose(110, 175, -5).near(f.machine));
-        assertTrue(new Pose(0, 0, 45).near(f.work()));
-        assertEquals(1, f.setCalls);
-    }
-
-    @Test public void alreadyAboveSafeZDoesNotDescend() throws Exception {
-        Fixture f = fixture();
-        Restored restored = f.restore();
-        f.gateway.moveToRestoredOrigin(restored, -40, 1000, s -> { });
+        f.gateway.moveToRestoredOrigin(restored, 1000, s -> { });
         assertEquals(1, f.jogs.size());
         assertFalse(f.jogs.get(0).hasZ());
-        assertEquals(-30, f.machine.z(), 0);
+        assertEquals(10, f.jogs.get(0).getX(), 1e-9);
+        assertEquals(-25, f.jogs.get(0).getY(), 1e-9);
+        assertTrue(new Pose(110, 175, -30).near(f.machine));
+        assertTrue(new Pose(0, 0, 20).near(f.work()));
+        assertEquals(1, f.setCalls);
     }
 
     @Test public void cameraMovementWorkResetAndConnectionResetDisarmReference() throws Exception {
@@ -95,24 +83,24 @@ public class OriginRecoveryTest {
         Restored restored = f.restore();
         f.gcode.offset = Code.G55;
         assertFalse(f.gateway.restoredOriginValid(restored));
-        assertThrows(IllegalStateException.class, () -> f.gateway.moveToRestoredOrigin(restored, -5, 1000, s -> { }));
+        assertThrows(IllegalStateException.class, () -> f.gateway.moveToRestoredOrigin(restored, 1000, s -> { }));
         f.gcode.offset = Code.G54;
         // Even an edit with the same file size and timestamp is caught at action time.
         var time = Files.getLastModifiedTime(f.file);
         Files.writeString(f.file, Files.readString(f.file).replace("X10", "X11"));
         Files.setLastModifiedTime(f.file, time);
-        assertThrows(IllegalStateException.class, () -> f.gateway.moveToRestoredOrigin(restored, -5, 1000, s -> { }));
+        assertThrows(IllegalStateException.class, () -> f.gateway.moveToRestoredOrigin(restored, 1000, s -> { }));
         assertTrue(f.jogs.isEmpty());
     }
 
-    @Test public void cancelledOrAlarmedOrDisconnectedLiftNeverStartsXY() throws Exception {
+    @Test public void cancelledOrAlarmedOrDisconnectedXYStopsWithoutCommandingZ() throws Exception {
         for (String mode : List.of("cancel", "alarm", "disconnect", "reject")) {
             Fixture f = fixture();
             Restored restored = f.restore();
             f.mode = mode;
-            assertThrows(IllegalStateException.class, () -> f.gateway.moveToRestoredOrigin(restored, -5, 1000, s -> { }));
+            assertThrows(IllegalStateException.class, () -> f.gateway.moveToRestoredOrigin(restored, 1000, s -> { }));
             assertEquals(1, f.jogs.size());
-            assertTrue(f.jogs.get(0).hasZ());
+            assertFalse(f.jogs.get(0).hasZ());
         }
     }
 
@@ -120,10 +108,10 @@ public class OriginRecoveryTest {
         Fixture f = fixture();
         Restored restored = f.restore();
         f.origin = new Pose(99, 99, -50);
-        assertThrows(IllegalStateException.class, () -> f.gateway.moveToRestoredOrigin(restored, -5, 1000, s -> { }));
+        assertThrows(IllegalStateException.class, () -> f.gateway.moveToRestoredOrigin(restored, 1000, s -> { }));
         f.origin = restored.origin();
         f.gcode.spindle = Code.M3;
-        assertThrows(IllegalStateException.class, () -> f.gateway.moveToRestoredOrigin(restored, -5, 1000, s -> { }));
+        assertThrows(IllegalStateException.class, () -> f.gateway.moveToRestoredOrigin(restored, 1000, s -> { }));
         assertTrue(f.jogs.isEmpty());
     }
 
@@ -189,7 +177,7 @@ public class OriginRecoveryTest {
                                 if (mode.equals("reject")) throw new IllegalStateException("Rejected jog");
                                 if (mode.equals("alarm")) { state = ControllerState.ALARM; return null; }
                                 if (mode.equals("disconnect")) { state = ControllerState.DISCONNECTED; return null; }
-                                if (delta.hasX()) assertTrue("XY cannot start before the Z lift", jogs.size() == 1 || machine.z() >= -5.005);
+                                assertFalse("Recovery must never command Z", delta.hasZ());
                                 pendingStart = machine;
                                 pendingTarget = new Pose(machine.x() + (delta.hasX() ? delta.getX() : 0),
                                         machine.y() + (delta.hasY() ? delta.getY() : 0), machine.z() + (delta.hasZ() ? delta.getZ() : 0));
@@ -211,7 +199,7 @@ public class OriginRecoveryTest {
             if (elapsed < 15) return; // Stale Idle at the old position.
             state = ControllerState.JOG;
             if (elapsed >= 90) {
-                machine = mode.equals("cancel") ? new Pose(pendingStart.x(), pendingStart.y(), (pendingStart.z() + pendingTarget.z()) / 2) : pendingTarget;
+                machine = mode.equals("cancel") ? new Pose((pendingStart.x() + pendingTarget.x()) / 2, (pendingStart.y() + pendingTarget.y()) / 2, pendingStart.z()) : pendingTarget;
                 pendingTarget = null;
                 state = ControllerState.IDLE;
             }

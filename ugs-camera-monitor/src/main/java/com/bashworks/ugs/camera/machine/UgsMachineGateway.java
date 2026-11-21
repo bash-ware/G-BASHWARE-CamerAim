@@ -145,39 +145,27 @@ public final class UgsMachineGateway implements MachineGateway {
     }
 
     @Override
-    public synchronized void moveToRestoredOrigin(Restored restored, double safeMachineZMm, double feedMm,
+    public synchronized void moveToRestoredOrigin(Restored restored, double feedMm,
                                                  Consumer<String> status) throws Exception {
-        if (!Double.isFinite(safeMachineZMm) || !Double.isFinite(feedMm) || feedMm <= 0)
-            throw new IllegalArgumentException("Enter a valid safe machine Z and a positive feed rate.");
+        if (!Double.isFinite(feedMm) || feedMm <= 0)
+            throw new IllegalArgumentException("Enter a positive feed rate.");
         requireJob(restored.job(), true);
         if (!restoredOriginValid(restored)) throw new IllegalStateException("Recovered origin is no longer valid. Reference again.");
         Pose start = pose(backend.getMachinePosition());
-        // +Z must be upward. A safe level below the present height never causes a descent.
-        double z = Math.max(start.z(), safeMachineZMm);
-        if (z > start.z()) {
-            status.accept("Raising to safe machine Z…");
-            backend.adjustManualLocation(PartialPosition.from(Axis.Z, z - start.z(), UnitUtils.Units.MM), feedMm);
-            waitForRecoveryTarget(new Pose(start.x(), start.y(), z), restored, timeoutFor(z - start.z(), feedMm), Double.NEGATIVE_INFINITY);
-        }
-        requireJob(restored.job(), true);
-        if (!restoredOriginValid(restored)) throw new IllegalStateException("Recovered frame changed during the Z lift. XY move stopped.");
-        Pose lifted = pose(backend.getMachinePosition());
-        if (lifted.z() < safeMachineZMm - OriginRecovery.TOLERANCE_MM)
-            throw new IllegalStateException("Safe Z was not reached. XY move stopped.");
-        double dx = restored.origin().x() - lifted.x(), dy = restored.origin().y() - lifted.y();
+        double dx = restored.origin().x() - start.x(), dy = restored.origin().y() - start.y();
         status.accept("Moving XY to the restored origin…");
         requireRecoveryIdle();
         backend.adjustManualLocation(new PartialPosition(dx, dy, UnitUtils.Units.MM), feedMm);
-        waitForRecoveryTarget(new Pose(restored.origin().x(), restored.origin().y(), lifted.z()), restored,
-                timeoutFor(Math.hypot(dx, dy), feedMm), lifted.z());
-        status.accept("At restored X0 Y0; Z remains raised.");
+        waitForRecoveryTarget(new Pose(restored.origin().x(), restored.origin().y(), start.z()), restored,
+                timeoutFor(Math.hypot(dx, dy), feedMm));
+        status.accept("At restored X0 Y0; Z unchanged.");
     }
 
     private long timeoutFor(double distanceMm, double feedMm) {
         return Math.min(3600000L, (long) Math.ceil(60000 * distanceMm / feedMm) + 30000L);
     }
 
-    private void waitForRecoveryTarget(Pose target, Restored restored, long timeoutMs, double minimumZ) throws Exception {
+    private void waitForRecoveryTarget(Pose target, Restored restored, long timeoutMs) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
         boolean moving = false;
         try {
@@ -191,8 +179,6 @@ public final class UgsMachineGateway implements MachineGateway {
                         || backend.getGcodeState().spindle != Code.M5 || !frameValid(restored))
                     throw new IllegalStateException("Machine state or recovered frame changed. Origin move stopped.");
                 Pose now = pose(backend.getMachinePosition());
-                if (now.z() < minimumZ - OriginRecovery.TOLERANCE_MM)
-                    throw new IllegalStateException("Z dropped below the safe height. Origin move stopped.");
                 if (current.canPosition()) {
                     if (now.near(target)) return;
                     if (moving) throw new IllegalStateException("Origin move stopped before reaching the target.");

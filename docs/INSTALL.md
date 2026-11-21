@@ -10,7 +10,7 @@
 ## Install the NBM
 
 1. Close any active CNC job and leave the controller disconnected or Idle.
-2. Download `G-BASHWARE-CamerAim-2.3.0_for-UGS-2.1.6.nbm` from the latest GitHub Release.
+2. Download `G-BASHWARE-CamerAim-2.3.1_for-UGS-2.1.6.nbm` from the latest GitHub Release.
 3. In UGS, open **Tools → Plugins → Downloaded**.
 4. Select **Add Plugins**, choose the downloaded NBM, then follow the installer.
 5. Restart UGS if requested.
@@ -29,7 +29,7 @@ Installing this branded release over the earlier Camera Monitor prototype update
 
 ### Camera and resolution notes
 
-Version 2.3.0 reads formats directly from Windows MediaCapture. The resolution list follows the selected camera and computer instead of a hard-coded model profile. CamerAim chooses a valid native format automatically and applies **Preview FPS** only as the displayed-frame limit. This permits a camera that requires 30 FPS for a 5 MP native mode to be displayed at 5 or 10 FPS without asking the driver for an invalid combination.
+Version 2.3.1 reads formats directly from Windows MediaCapture. The resolution list follows the selected camera and computer instead of a hard-coded model profile. CamerAim chooses a valid native format automatically and applies **Preview FPS** only as the displayed-frame limit. This permits a camera that requires 30 FPS for a 5 MP native mode to be displayed at 5 or 10 FPS without asking the driver for an invalid combination.
 
 Camera work runs in a separate helper process. A native camera or driver failure ends that helper and reports an error in the panel without taking down UGS. Use **Copy diagnostics** and send the copied text when troubleshooting another computer. **Rescan cameras** refreshes both devices and formats.
 
@@ -60,11 +60,10 @@ This recovers XY translation only. The workpiece must retain its orientation and
 2. Use the live camera and UGS jogging to center the crosshair on a recognizable milled feature. Prefer an arc center or an unambiguous corner.
 3. Click **Recover job XY origin…**. The preview shows UGS's processed tool-center paths from above, with +X right and +Y up. It does not show the finished edges of the cutter's swept area; account for the tool radius when matching an edge.
 4. Zoom with the wheel or **+ / −**, right-drag to pan, and use **Fit job** to reset the view. Click the matching point. Snapping selects exact endpoints/corners and arc centers, or the nearest cutting path. Turn snapping off only when you intend to choose a free point.
-5. Check the selected job coordinates and calculated machine origin, then click **Re-reference XY**. This sets the current tool's work coordinates to the selected feature minus the calibrated camera-to-tool movement. It does not move any axis, change Z zero, or use the ordinary **Move tool to crosshair** zeroing action.
-6. Wait for confirmation. To travel to the restored origin, enter **Safe machine Z (mm)**: an absolute machine-coordinate height, not a distance above work Z0. Confirm that machine Z is referenced, +Z is upward, and the entire XY path is clear.
-7. Click **Raise Z, then move to X0 Y0**. CamerAim raises Z if below the chosen level, waits for the reported safe height and Idle, then moves XY. If already above the level, it never lowers Z. It leaves Z raised at the origin. **Stop move** cancels the jog.
+5. Check the selected job coordinates and calculated machine origin, then click **Re-reference XY & move to X0 Y0**. This sets the current tool's work coordinates to the selected feature minus the calibrated camera-to-tool movement. Once UGS confirms the restored origin, CamerAim immediately moves XY to X0 Y0 at the configured jog feed. It leaves the current Z position and Z zero unchanged. Recovery assumes Z is already safe; there is no Z lift, safe-height setting, or Z confirmation step.
+6. **Stop move** cancels the operation. An unconfirmed or failed origin change does not start the XY move.
 
-Selecting a point never starts motion. Moving the camera/machine disarms a pending selection. Changing the job or work frame, reconnecting, or homing disarms stale selections or recovery results. If a command fails or coordinates are not confirmed, verify UGS's displayed work coordinates before continuing; setting an origin is not automatically undone.
+Selecting a point only arms the button. Pressing the button restores XY and moves to the origin. Moving the camera/machine disarms a pending selection. Changing the job or work frame, reconnecting, or homing disarms stale selections or recovery results. If a command fails or coordinates are not confirmed, verify UGS's displayed work coordinates before continuing; setting an origin is not automatically undone.
 
 The initial release supports ordinary G0/G1 and XY-plane G2/G3 paths, metric/inch units, absolute/incremental movement, and a single G54–G59 work system. It requires explicit G20/G21 before XY movement. It refuses macros, probing/canned cycles, cutter compensation, rotated/scaled/local coordinate frames, and machine-coordinate XY moves rather than presenting misleading geometry. Z-only G53/G28/G30 retracts are ignored in the XY preview. Camera alignment, clamping clearance, and a real-machine recovery test remain operator checks.
 

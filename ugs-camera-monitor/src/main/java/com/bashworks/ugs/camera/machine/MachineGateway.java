@@ -20,7 +20,7 @@ public interface MachineGateway {
     default OriginRecovery.Restored restoreOrigin(JobPreview job, OriginRecovery.Anchor anchor,
             JobPreview.Point point, CameraOffset offset) throws Exception { throw new UnsupportedOperationException(); }
     default boolean restoredOriginValid(OriginRecovery.Restored restored) { return false; }
-    default void moveToRestoredOrigin(OriginRecovery.Restored restored, double safeMachineZMm, double feedMm,
+    default void moveToRestoredOrigin(OriginRecovery.Restored restored, double feedMm,
             Consumer<String> status) throws Exception { throw new UnsupportedOperationException(); }
     default void cancelReferenceMove() throws Exception { throw new UnsupportedOperationException(); }
     void moveToAimHeight(String homingCommand, double dropDistance, LengthUnit unit, double feedRate, Consumer<String> statusListener) throws Exception;

@@ -671,7 +671,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
                 SwingUtilities.invokeLater(() -> {
                     if (closed) return;
                     recoveryDialog = new OriginRecoveryDialog(SwingUtilities.getWindowAncestor(this), machine, job,
-                            calibrated, feedMm, preferences, () -> {
+                            calibrated, feedMm, () -> {
                                 recoveryDialog = null;
                                 recoveryActive = false;
                                 refreshMachineState();
