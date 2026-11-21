@@ -33,10 +33,12 @@ public final class CameraMonitorTopComponent extends TopComponent implements UGS
 
     private final BackendAPI backend;
     private final CameraMonitorPanel panel;
+    private final UgsMachineGateway machine;
 
     public CameraMonitorTopComponent() {
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
-        panel = new CameraMonitorPanel(new UgsMachineGateway(backend));
+        machine = new UgsMachineGateway(backend);
+        panel = new CameraMonitorPanel(machine);
         setLayout(new BorderLayout());
         add(panel, BorderLayout.CENTER);
         setName(PluginInfo.TITLE);
@@ -71,6 +73,7 @@ public final class CameraMonitorTopComponent extends TopComponent implements UGS
 
     @Override
     public void UGSEvent(UGSEvent event) {
+        machine.onMachineEvent(event);
         SwingUtilities.invokeLater(panel::refreshMachineState);
     }
 }

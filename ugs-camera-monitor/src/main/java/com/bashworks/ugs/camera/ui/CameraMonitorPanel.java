@@ -134,6 +134,10 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private final JLabel positionLabel = new JLabel("Position: —");
     private final JLabel machineStatus = new JLabel("UGS: —");
     private final JButton moveButton = new JButton("Move tool to crosshair");
+    private final JButton recoverButton = new JButton("Recover job XY origin…");
+    private OriginRecoveryDialog recoveryDialog;
+    private boolean recoveryActive;
+    private boolean closed;
     private String homingCommand;
     private volatile boolean aimHeightInProgress;
     private boolean positioningInProgress;
@@ -271,6 +275,14 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         c.gridx = 4;
         c.gridwidth = 3;
         panel.add(machineStatus, c);
+        c.gridy = 4;
+        c.gridx = 0;
+        c.gridwidth = 3;
+        panel.add(recoverButton, c);
+        c.gridx = 3;
+        c.gridwidth = 4;
+        panel.add(new JLabel("Aim at a milled feature, then match it in the job preview."), c);
+        recoverButton.setToolTipText("Recover the active job's lost XY origin from a matching camera feature. Z zero is unchanged.");
         return panel;
     }
 
@@ -293,6 +305,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         saveButton.addActionListener(event -> saveOffset());
         lockParametersButton.addActionListener(event -> toggleParametersLock());
         moveButton.addActionListener(event -> moveTool());
+        recoverButton.addActionListener(event -> openOriginRecovery());
         aimHeightButton.addActionListener(event -> goToAimHeight());
         configHomingButton.addActionListener(event -> configureHomingCommand());
         camera.addStatusListener(status -> SwingUtilities.invokeLater(() -> {
@@ -472,7 +485,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     }
 
     private void moveTool() {
-        if (positioningInProgress || aimHeightInProgress) return;
+        if (positioningInProgress || aimHeightInProgress || recoveryActive) return;
         CameraOffset offset = currentOffset();
         MachineState state = machine.state();
         if (!state.canPosition()) {
@@ -516,13 +529,15 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         lockParametersButton.setToolTipText(locked
                 ? "Parameters are locked against accidental changes. Click to unlock."
                 : "Lock all offset, unit, feed, and aim drop parameters.");
-        offsetX.setEnabled(!locked);
-        offsetY.setEnabled(!locked);
-        unit.setEnabled(!locked);
-        feedRate.setEnabled(!locked);
-        aimDrop.setEnabled(!locked);
-        configHomingButton.setEnabled(!locked && !aimHeightInProgress);
-        saveButton.setEnabled(!locked);
+        boolean editable = !locked && !recoveryActive;
+        offsetX.setEnabled(editable);
+        offsetY.setEnabled(editable);
+        unit.setEnabled(editable);
+        feedRate.setEnabled(editable);
+        aimDrop.setEnabled(editable);
+        configHomingButton.setEnabled(editable && !aimHeightInProgress);
+        saveButton.setEnabled(editable);
+        lockParametersButton.setEnabled(!recoveryActive);
     }
 
     public boolean isParametersLocked() {
@@ -531,11 +546,12 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
 
     public void refreshMachineState() {
         MachineState state = machine.state();
-        boolean canMove = state.canPosition() && !aimHeightInProgress && !positioningInProgress;
+        boolean canMove = state.canPosition() && !aimHeightInProgress && !positioningInProgress && !recoveryActive;
         moveButton.setEnabled(canMove);
         aimHeightButton.setEnabled(canMove);
-        configHomingButton.setEnabled(!aimHeightInProgress && !lockParametersButton.isSelected());
-        if (!aimHeightInProgress && !positioningInProgress) {
+        recoverButton.setEnabled(canMove);
+        applyParametersLocked(lockParametersButton.isSelected());
+        if (!aimHeightInProgress && !positioningInProgress && !recoveryActive) {
             machineStatus.setText(state.canPosition() ? "UGS: Idle" : "UGS: " + state.blockedReason());
         }
         refreshPositionPreview();
@@ -595,7 +611,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     }
 
     private void goToAimHeight() {
-        if (aimHeightInProgress || positioningInProgress) return;
+        if (aimHeightInProgress || positioningInProgress || recoveryActive) return;
         MachineState state = machine.state();
         if (!state.canPosition()) {
             showError(state.blockedReason());
@@ -642,8 +658,43 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         JOptionPane.showMessageDialog(this, message, "G-BASHWARE CamerAim", JOptionPane.ERROR_MESSAGE);
     }
 
+    private void openOriginRecovery() {
+        if (recoveryActive || positioningInProgress || aimHeightInProgress) return;
+        CameraOffset calibrated = currentOffset();
+        double feedMm = calibrated.unit().convert(((Number) feedRate.getValue()).doubleValue(), LengthUnit.MM);
+        recoveryActive = true;
+        refreshMachineState();
+        machineStatus.setText("Loading the active job preview…");
+        Thread loader = new Thread(() -> {
+            try {
+                var job = machine.loadActiveJob();
+                SwingUtilities.invokeLater(() -> {
+                    if (closed) return;
+                    recoveryDialog = new OriginRecoveryDialog(SwingUtilities.getWindowAncestor(this), machine, job,
+                            calibrated, feedMm, preferences, () -> {
+                                recoveryDialog = null;
+                                recoveryActive = false;
+                                refreshMachineState();
+                            });
+                    machineStatus.setText("XY recovery preview open");
+                    recoveryDialog.setVisible(true);
+                });
+            } catch (Exception error) {
+                SwingUtilities.invokeLater(() -> {
+                    recoveryActive = false;
+                    refreshMachineState();
+                    if (!closed) showError("Cannot open job preview: " + error.getMessage());
+                });
+            }
+        }, "CamerAim-LoadReferenceJob");
+        loader.setDaemon(true);
+        loader.start();
+    }
+
     @Override
     public void close() {
+        closed = true;
+        if (recoveryDialog != null) recoveryDialog.requestClose();
         camera.close();
     }
 }

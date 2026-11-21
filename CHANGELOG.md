@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.0 - 2026-11-21
+
+- Recover a lost job XY origin by aligning the camera to an existing feature and selecting its matching point in the active job's top-down preview.
+- Zoom, pan, fit the job, and snap to toolpath endpoints, corners, arc centers, and cutting paths. Preview the processed job UGS will actually send.
+- Apply the calibrated camera-to-tool offset, set only work X/Y, and wait for coordinate feedback before enabling travel.
+- Provide a separate safe-Z-then-XY move to the recovered origin, with jog cancellation and no descent if already above the chosen machine Z.
+- Disarm stale references when the camera position, job, controller connection, or coordinate frame changes. Reject ambiguous coordinate transforms and multi-WCS jobs.
+
 ## 2.2.2 - 2026-11-11
 
 - Automatically set work X/Y zero after the tool reaches the calibrated camera target and UGS reports Idle; leave Z unchanged.

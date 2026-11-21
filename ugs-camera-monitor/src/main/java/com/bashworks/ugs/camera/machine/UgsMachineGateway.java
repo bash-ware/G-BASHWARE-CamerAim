@@ -3,6 +3,12 @@ package com.bashworks.ugs.camera.machine;
 import com.bashworks.ugs.camera.model.CameraOffset;
 import com.bashworks.ugs.camera.model.LengthUnit;
 import com.bashworks.ugs.camera.model.TargetPosition;
+import com.bashworks.ugs.camera.model.JobPreview;
+import com.bashworks.ugs.camera.model.OriginRecovery;
+import com.bashworks.ugs.camera.model.OriginRecovery.*;
+import com.willwinder.universalgcodesender.gcode.util.Code;
+import com.willwinder.universalgcodesender.model.UGSEvent;
+import com.willwinder.universalgcodesender.model.events.FileStateEvent;
 import com.willwinder.universalgcodesender.listeners.ControllerState;
 import com.willwinder.universalgcodesender.listeners.UGSEventListener;
 import com.willwinder.universalgcodesender.model.Axis;
@@ -23,12 +29,187 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class UgsMachineGateway implements MachineGateway {
     private final BackendAPI backend;
+    private final AtomicLong recoveryEpoch = new AtomicLong();
 
     public UgsMachineGateway(BackendAPI backend) {
         this.backend = Objects.requireNonNull(backend, "backend");
+    }
+
+    /** Called by the existing TopComponent event subscription (no extra listener lifetime). */
+    public void onMachineEvent(UGSEvent event) {
+        if (event instanceof FileStateEvent || event instanceof AlarmEvent
+                || (event instanceof ControllerStateEvent && switch (((ControllerStateEvent) event).getState()) {
+                    case DISCONNECTED, CONNECTING, ALARM, HOME -> true;
+                    default -> false;
+                })) recoveryEpoch.incrementAndGet();
+    }
+
+    @Override
+    public JobPreview loadActiveJob() throws Exception {
+        if (backend.getGcodeFile() == null || backend.getProcessedGcodeFile() == null)
+            throw new IllegalStateException("Open the job in UGS before recovering its origin.");
+        JobPreview job = new JobPreviewLoader().load(backend.getGcodeFile().toPath(), backend.getProcessedGcodeFile().toPath());
+        requireJob(job, true);
+        return job;
+    }
+
+    private boolean jobCurrent(JobPreview job) {
+        try {
+            return backend.getGcodeFile() != null && backend.getProcessedGcodeFile() != null
+                    && backend.getGcodeFile().toPath().toRealPath().equals(job.source().path())
+                    && backend.getProcessedGcodeFile().toPath().toRealPath().equals(job.processed().path())
+                    && job.source().matchesMetadata() && job.processed().matchesMetadata();
+        } catch (Exception e) { return false; }
+    }
+
+    private void requireJob(JobPreview job, boolean content) throws Exception {
+        if (!jobCurrent(job) || (content && (!job.source().matchesContent() || !job.processed().matchesContent())))
+            throw new IllegalStateException("The active job changed. Reopen the reference preview.");
+        if (backend.getGcodeState() == null || !job.workSystem().equals(backend.getGcodeState().offset.toString()))
+            throw new IllegalStateException("Select " + job.workSystem() + " in UGS to match the job before referencing.");
+    }
+
+    private void requireRecoveryIdle() {
+        if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Origin operation cancelled.");
+        MachineState current = state();
+        if (!current.canPosition()) throw new IllegalStateException(current.blockedReason());
+        if (backend.getGcodeState() == null || backend.getGcodeState().spindle != Code.M5)
+            throw new IllegalStateException("Stop the spindle before referencing or moving to the origin.");
+    }
+
+    private static Pose pose(Position p) {
+        Position mm = p.getPositionIn(UnitUtils.Units.MM);
+        return new Pose(mm.x, mm.y, mm.z);
+    }
+
+    @Override
+    public Anchor captureReference(JobPreview job) throws Exception {
+        requireRecoveryIdle();
+        requireJob(job, false);
+        return new Anchor(pose(backend.getMachinePosition()), pose(backend.getWorkPosition()),
+                job.workSystem(), recoveryEpoch.get(), backend.getController());
+    }
+
+    @Override
+    public boolean referenceValid(JobPreview job, Anchor anchor) {
+        try {
+            requireRecoveryIdle();
+            requireJob(job, false);
+            return anchor.epoch() == recoveryEpoch.get() && anchor.controller() == backend.getController()
+                    && anchor.workSystem().equals(job.workSystem())
+                    && anchor.machine().near(pose(backend.getMachinePosition()))
+                    && anchor.work().near(pose(backend.getWorkPosition()));
+        } catch (Exception e) { return false; }
+    }
+
+    @Override
+    public synchronized Restored restoreOrigin(JobPreview job, Anchor anchor, JobPreview.Point point, CameraOffset offset) throws Exception {
+        requireJob(job, true);
+        if (!referenceValid(job, anchor))
+            throw new IllegalStateException("Camera position or machine state changed. Aim again and reselect the feature.");
+        Pose work = OriginRecovery.workAtCamera(anchor, point, offset);
+        Pose origin = OriginRecovery.recoveredOrigin(anchor, point, offset);
+        backend.setWorkPosition(new PartialPosition(work.x(), work.y(), UnitUtils.Units.MM));
+        // setWorkPosition only queues the command. Do not offer motion until the
+        // controller actually reports the recovered frame, with Z unaffected.
+        Restored restored = new Restored(job, origin, job.workSystem(), anchor.epoch(), anchor.controller());
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+        while (System.nanoTime() < deadline) {
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException("Referencing cancelled.");
+            requireRecoveryIdle();
+            requireJob(job, false);
+            if (!anchor.machine().near(pose(backend.getMachinePosition())) || anchor.epoch() != recoveryEpoch.get())
+                throw new IllegalStateException("Machine changed while setting the origin. Recovery was not confirmed.");
+            if (restoredOriginValid(restored)) return restored;
+            Thread.sleep(50);
+        }
+        throw new TimeoutException("UGS did not confirm the new XY origin. No move was started.");
+    }
+
+    @Override
+    public boolean restoredOriginValid(Restored restored) {
+        try {
+            requireRecoveryIdle();
+            requireJob(restored.job(), false);
+            return frameValid(restored);
+        } catch (Exception e) { return false; }
+    }
+
+    private boolean frameValid(Restored restored) {
+        return restored.epoch() == recoveryEpoch.get() && restored.controller() == backend.getController()
+                && restored.origin().near(pose(backend.getMachinePosition()).minus(pose(backend.getWorkPosition())));
+    }
+
+    @Override
+    public synchronized void moveToRestoredOrigin(Restored restored, double safeMachineZMm, double feedMm,
+                                                 Consumer<String> status) throws Exception {
+        if (!Double.isFinite(safeMachineZMm) || !Double.isFinite(feedMm) || feedMm <= 0)
+            throw new IllegalArgumentException("Enter a valid safe machine Z and a positive feed rate.");
+        requireJob(restored.job(), true);
+        if (!restoredOriginValid(restored)) throw new IllegalStateException("Recovered origin is no longer valid. Reference again.");
+        Pose start = pose(backend.getMachinePosition());
+        // +Z must be upward. A safe level below the present height never causes a descent.
+        double z = Math.max(start.z(), safeMachineZMm);
+        if (z > start.z()) {
+            status.accept("Raising to safe machine Z…");
+            backend.adjustManualLocation(PartialPosition.from(Axis.Z, z - start.z(), UnitUtils.Units.MM), feedMm);
+            waitForRecoveryTarget(new Pose(start.x(), start.y(), z), restored, timeoutFor(z - start.z(), feedMm), Double.NEGATIVE_INFINITY);
+        }
+        requireJob(restored.job(), true);
+        if (!restoredOriginValid(restored)) throw new IllegalStateException("Recovered frame changed during the Z lift. XY move stopped.");
+        Pose lifted = pose(backend.getMachinePosition());
+        if (lifted.z() < safeMachineZMm - OriginRecovery.TOLERANCE_MM)
+            throw new IllegalStateException("Safe Z was not reached. XY move stopped.");
+        double dx = restored.origin().x() - lifted.x(), dy = restored.origin().y() - lifted.y();
+        status.accept("Moving XY to the restored origin…");
+        requireRecoveryIdle();
+        backend.adjustManualLocation(new PartialPosition(dx, dy, UnitUtils.Units.MM), feedMm);
+        waitForRecoveryTarget(new Pose(restored.origin().x(), restored.origin().y(), lifted.z()), restored,
+                timeoutFor(Math.hypot(dx, dy), feedMm), lifted.z());
+        status.accept("At restored X0 Y0; Z remains raised.");
+    }
+
+    private long timeoutFor(double distanceMm, double feedMm) {
+        return Math.min(3600000L, (long) Math.ceil(60000 * distanceMm / feedMm) + 30000L);
+    }
+
+    private void waitForRecoveryTarget(Pose target, Restored restored, long timeoutMs, double minimumZ) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        boolean moving = false;
+        try {
+            while (System.nanoTime() < deadline) {
+                if (Thread.currentThread().isInterrupted()) throw new InterruptedException("Origin move cancelled.");
+                requireJob(restored.job(), false);
+                MachineState current = state();
+                ControllerState cs = backend.getControllerState();
+                if (!current.connected() || current.paused() || current.sendingFile()
+                        || (cs != ControllerState.IDLE && cs != ControllerState.JOG && cs != ControllerState.RUN)
+                        || backend.getGcodeState().spindle != Code.M5 || !frameValid(restored))
+                    throw new IllegalStateException("Machine state or recovered frame changed. Origin move stopped.");
+                Pose now = pose(backend.getMachinePosition());
+                if (now.z() < minimumZ - OriginRecovery.TOLERANCE_MM)
+                    throw new IllegalStateException("Z dropped below the safe height. Origin move stopped.");
+                if (current.canPosition()) {
+                    if (now.near(target)) return;
+                    if (moving) throw new IllegalStateException("Origin move stopped before reaching the target.");
+                } else moving = true;
+                Thread.sleep(50);
+            }
+            throw new TimeoutException("Origin move timed out.");
+        } catch (Exception e) {
+            try { backend.getController().cancelJog(); } catch (Exception ignored) { }
+            throw e;
+        }
+    }
+
+    @Override
+    public void cancelReferenceMove() throws Exception {
+        recoveryEpoch.incrementAndGet();
+        backend.getController().cancelJog();
     }
 
     @Override

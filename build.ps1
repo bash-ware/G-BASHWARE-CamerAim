@@ -33,5 +33,5 @@ try {
     Pop-Location
 }
 
-$nbm = Join-Path $moduleRoot 'target\nbm\ugs-platform-plugin-camera-monitor-2.2.2.nbm'
+$nbm = Join-Path $moduleRoot 'target\nbm\ugs-platform-plugin-camera-monitor-2.3.0.nbm'
 Write-Host "NBM created: $nbm"

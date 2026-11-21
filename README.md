@@ -8,7 +8,7 @@ G-BASHWARE CamerAim is a camera positioning plugin for [Universal Gcode Sender P
 
 The current release targets **UGS Platform 2.1.6** and **Java 17 or newer**. The camera connects directly to the computer running UGS.
 
-The published UGS plugin is **v2.2.2**. Development of the local monitoring
+The current plugin version is **v2.3.0**. Development of the local monitoring
 system now lives in the same repository:
 
 - shared/ — versioned API v1 contract and fixtures
@@ -32,15 +32,16 @@ These monitoring components are pre-release companion services.
 - Exact relative XY movement from the crosshair target to the tool
 - Live machine coordinates and calculated tool target
 - Automatically sets work X/Y zero after the tool reaches the camera target
+- Recover a lost job XY origin from a camera-aligned milled feature and a zoomable top-down job preview, with endpoint/arc-center snapping and a separate safe-Z move to the restored origin
 - Aim Height: rehome Z to maximum height and lower by a configurable distance (default 50 mm) for consistent optical focal distance
 - Movement lockout unless UGS is connected, Idle, and able to jog
 - Built-in G-BASHWARE update-center registration
 
-Version 2.2.2 requires Windows 10 or 11. It no longer loads the legacy OpenIMAJ/videoInput native camera library into UGS.
+Version 2.3.0 requires Windows 10 or 11. It no longer loads the legacy OpenIMAJ/videoInput native camera library into UGS.
 
 ## Install
 
-1. Download the latest `G-BASHWARE-CamerAim-2.2.2_for-UGS-2.1.6.nbm` from [Releases](https://github.com/bash-ware/G-BASHWARE-CamerAim/releases/latest).
+1. Download the latest `G-BASHWARE-CamerAim-2.3.0_for-UGS-2.1.6.nbm` from [Releases](https://github.com/bash-ware/G-BASHWARE-CamerAim/releases/latest).
 2. In UGS Platform, open **Tools → Plugins → Downloaded**.
 3. Choose **Add Plugins**, select the `.nbm` file, and complete the installer.
 4. Restart UGS if requested.

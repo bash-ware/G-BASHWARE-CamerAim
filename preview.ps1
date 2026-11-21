@@ -23,19 +23,23 @@ $sources = @(
     (Join-Path $projectRoot "ugs-camera-monitor\src\main\java\com\bashworks\ugs\camera\model\CameraOffset.java"),
     (Join-Path $projectRoot "ugs-camera-monitor\src\main\java\com\bashworks\ugs\camera\model\LengthUnit.java"),
     (Join-Path $projectRoot "ugs-camera-monitor\src\main\java\com\bashworks\ugs\camera\model\TargetPosition.java"),
+    (Join-Path $projectRoot "ugs-camera-monitor\src\main\java\com\bashworks\ugs\camera\model\JobPreview.java"),
+    (Join-Path $projectRoot "ugs-camera-monitor\src\main\java\com\bashworks\ugs\camera\model\OriginRecovery.java"),
     (Join-Path $projectRoot "ugs-camera-monitor\src\main\java\com\bashworks\ugs\camera\ui\CameraImagePanel.java"),
     (Join-Path $projectRoot "ugs-camera-monitor\src\main\java\com\bashworks\ugs\camera\ui\CameraRotation.java"),
     (Join-Path $projectRoot "ugs-camera-monitor\src\main\java\com\bashworks\ugs\camera\ui\CameraMonitorPanel.java"),
+    (Join-Path $projectRoot "ugs-camera-monitor\src\main\java\com\bashworks\ugs\camera\ui\JobPreviewPanel.java"),
+    (Join-Path $projectRoot "ugs-camera-monitor\src\main\java\com\bashworks\ugs\camera\ui\OriginRecoveryDialog.java"),
     (Join-Path $projectRoot "ugs-camera-monitor\src\test\java\com\bashworks\ugs\camera\ui\CameraMonitorStandalone.java")
 )
 
-if (-not (Test-Path -LiteralPath $verifyDir) -or (Get-ChildItem $verifyDir -ErrorAction SilentlyContinue).Count -eq 0) {
-    Write-Host "Compiling CamerAim standalone runner..."
-    New-Item -ItemType Directory -Force -Path $verifyDir | Out-Null
-    & $Javac -d $verifyDir $sources
-    $resources = Join-Path $projectRoot "ugs-camera-monitor\src\main\resources"
-    Copy-Item "$resources\*" $verifyDir -Recurse -Force
-}
+# Compile current sources so the preview cannot silently run a previous build.
+Write-Host "Compiling CamerAim standalone runner..."
+New-Item -ItemType Directory -Force -Path $verifyDir | Out-Null
+& $Javac -d $verifyDir $sources
+if ($LASTEXITCODE -ne 0) { throw "Standalone compilation failed." }
+$resources = Join-Path $projectRoot "ugs-camera-monitor\src\main\resources"
+Copy-Item "$resources\*" $verifyDir -Recurse -Force
 
 Write-Host "Launching CamerAim standalone preview..."
 & $Java -cp $verifyDir com.bashworks.ugs.camera.ui.CameraMonitorStandalone
