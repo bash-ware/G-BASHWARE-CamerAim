@@ -10,7 +10,7 @@
 ## Install the NBM
 
 1. Close any active CNC job and leave the controller disconnected or Idle.
-2. Download `G-BASHWARE-CamerAim-2.3.1_for-UGS-2.1.6.nbm` from the latest GitHub Release.
+2. Download `G-BASHWARE-CamerAim-2.3.2_for-UGS-2.1.6.nbm` from the latest GitHub Release.
 3. In UGS, open **Tools → Plugins → Downloaded**.
 4. Select **Add Plugins**, choose the downloaded NBM, then follow the installer.
 5. Restart UGS if requested.
@@ -20,16 +20,15 @@ Installing this branded release over the earlier Camera Monitor prototype update
 
 ## Verify the camera
 
-1. Select the camera. Integrated notebook cameras and USB/UVC cameras are supported.
-2. Wait while CamerAim asks Windows for the camera's available formats, then select one of the displayed resolutions.
-3. Select a **Preview FPS** limit. The choices are capped by the selected resolution's Windows-reported native rate.
-4. Click **Start camera**. CamerAim verifies the exact resolution and never silently substitutes another size.
-5. Set display rotation to match the machine axes.
-6. Use 2× or 3× zoom for fine alignment. Zoom and rotation affect only the view; the crosshair remains at the optical center with a 3 × 3 pixel opening.
+1. Open CamerAim. It starts the last camera and resolution you started manually, when available, or uses an available camera and a supported resolution.
+2. To switch cameras or settings, click **Stop camera**, then select a camera, resolution, and **Preview FPS** limit. The FPS choices are capped by the selected resolution's Windows-reported native rate.
+3. Click **Start camera** to resume and remember the camera and resolution. CamerAim verifies the exact resolution before showing video.
+4. Set display rotation to match the machine axes.
+5. Use 2× or 3× zoom for fine alignment. Zoom and rotation affect only the view; the crosshair remains at the optical center with a 3 × 3 pixel opening.
 
 ### Camera and resolution notes
 
-Version 2.3.1 reads formats directly from Windows MediaCapture. The resolution list follows the selected camera and computer instead of a hard-coded model profile. CamerAim chooses a valid native format automatically and applies **Preview FPS** only as the displayed-frame limit. This permits a camera that requires 30 FPS for a 5 MP native mode to be displayed at 5 or 10 FPS without asking the driver for an invalid combination.
+Version 2.3.2 reads formats directly from Windows MediaCapture. The resolution list follows the selected camera and computer instead of a hard-coded model profile. CamerAim chooses a valid native format automatically and applies **Preview FPS** only as the displayed-frame limit. This permits a camera that requires 30 FPS for a 5 MP native mode to be displayed at 5 or 10 FPS without asking the driver for an invalid combination.
 
 Camera work runs in a separate helper process. A native camera or driver failure ends that helper and reports an error in the panel without taking down UGS. Use **Copy diagnostics** and send the copied text when troubleshooting another computer. **Rescan cameras** refreshes both devices and formats.
 

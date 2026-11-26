@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.2 - 2026-11-27
+
+- Automatically start the camera when CamerAim opens and remember the camera and resolution selected at manual start.
+
 ## 2.3.1 - 2026-11-21
 
 - Replace separate restore/travel actions with **Re-reference XY & move to X0 Y0**: confirm the recovered origin, then immediately jog XY to it.

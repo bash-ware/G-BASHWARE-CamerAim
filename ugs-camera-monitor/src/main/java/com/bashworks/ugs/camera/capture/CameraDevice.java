@@ -15,7 +15,7 @@ public final class CameraDevice {
         this.name = name;
     }
 
-    String id() { return id; }
+    public String id() { return id; }
     void setModes(List<CameraMode> modes) { this.modes = List.copyOf(modes); }
     public List<CameraMode> modes() { return modes; }
 

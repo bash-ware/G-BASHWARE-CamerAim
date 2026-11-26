@@ -44,6 +44,9 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private static final String PREF_ZOOM = "camera.zoom";
     private static final String PREF_ROTATION = "camera.rotation";
     private static final String PREF_FPS = "camera.fps";
+    private static final String PREF_CAMERA = "camera.device";
+    private static final String PREF_WIDTH = "camera.width";
+    private static final String PREF_HEIGHT = "camera.height";
 
     private final MachineGateway machine;
     private final CameraCaptureService camera = new CameraCaptureService();
@@ -137,7 +140,8 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private final JButton recoverButton = new JButton("Recover job XY origin…");
     private OriginRecoveryDialog recoveryDialog;
     private boolean recoveryActive;
-    private boolean closed;
+    private boolean closed = true;
+    private long cameraDiscovery;
     private String homingCommand;
     private volatile boolean aimHeightInProgress;
     private boolean positioningInProgress;
@@ -171,7 +175,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         updateMovementPreview();
         applyParametersLocked(preferences.getBoolean(PREF_LOCKED, false));
         refreshMachineState();
-        scanCameras();
+        updateCameraControls();
     }
 
     private JPanel createCameraControls() {
@@ -196,7 +200,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
                     new java.awt.datatransfer.StringSelection(camera.diagnostics()), null);
             cameraStatus.setText("Camera diagnostics copied to clipboard.");
         });
-        rescan.addActionListener(event -> scanCameras());
+        rescan.addActionListener(event -> scanCameras(false));
         actions.add(rescan);
         actions.add(copy);
         heading.add(actions, BorderLayout.EAST);
@@ -288,7 +292,7 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
 
     private void wireEvents() {
         cameras.addActionListener(event -> {
-            if (!updatingCameraModes) updateCameraModes();
+            if (!updatingCameraModes && !closed) updateCameraModes(false);
         });
         sizes.addActionListener(event -> {
             if (!updatingCameraModes) updateFrameRates();
@@ -309,51 +313,75 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         aimHeightButton.addActionListener(event -> goToAimHeight());
         configHomingButton.addActionListener(event -> configureHomingCommand());
         camera.addStatusListener(status -> SwingUtilities.invokeLater(() -> {
+            if (closed) return;
             cameraStatus.setText(status);
-            boolean running = camera.isRunning();
-            startCamera.setText(running ? "Stop camera" : "Start camera");
-            cameras.setEnabled(!running);
-            sizes.setEnabled(!running && sizes.getItemCount() > 0);
-            frameRates.setEnabled(!running && frameRates.getItemCount() > 0);
             if (status.startsWith("Camera error:")) imagePanel.clearFrame();
-            rescan.setEnabled(!running);
+            updateCameraControls();
         }));
     }
 
-    private void scanCameras() {
-        camera.stop();
-        imagePanel.clearFrame();
-        startCamera.setEnabled(false);
-        rescan.setEnabled(false);
-        cameraStatus.setText("Scanning for cameras…");
-        camera.findDevices(
-                devices -> SwingUtilities.invokeLater(() -> setDevices(devices)),
-                error -> SwingUtilities.invokeLater(() -> {
-                    cameraStatus.setText("Camera discovery failed: " + error.getMessage());
-                    rescan.setEnabled(true);
-                }));
+    public void open() {
+        if (!closed) return;
+        closed = false;
+        scanCameras(true);
     }
 
-    private void setDevices(List<CameraDevice> devices) {
+    private void updateCameraControls() {
+        boolean running = camera.isRunning();
+        boolean ready = !closed && sizes.getItemCount() > 0;
+        startCamera.setText(running ? "Stop camera" : "Start camera");
+        startCamera.setEnabled(!closed && (running || (ready && frameRates.getItemCount() > 0)));
+        cameras.setEnabled(!closed && !running && cameras.getItemCount() > 0);
+        sizes.setEnabled(ready && !running);
+        frameRates.setEnabled(ready && !running && frameRates.getItemCount() > 0);
+        rescan.setEnabled(!closed && !running);
+    }
+
+    private void scanCameras(boolean autoStart) {
+        if (closed || camera.isRunning()) return;
+        long request = ++cameraDiscovery;
+        imagePanel.clearFrame();
         updatingCameraModes = true;
         try {
             cameras.removeAllItems();
-            devices.forEach(cameras::addItem);
+            sizes.removeAllItems();
+            frameRates.removeAllItems();
         } finally { updatingCameraModes = false; }
-        rescan.setEnabled(true);
-        updateCameraModes();
+        updateCameraControls();
+        rescan.setEnabled(false);
+        cameraStatus.setText("Scanning for cameras…");
+        camera.findDevices(
+                devices -> SwingUtilities.invokeLater(() -> {
+                    if (request == cameraDiscovery) setDevices(devices, autoStart);
+                }),
+                error -> SwingUtilities.invokeLater(() -> {
+                    if (request != cameraDiscovery) return;
+                    cameraStatus.setText("Camera discovery failed: " + error.getMessage());
+                    updateCameraControls();
+                }));
     }
 
-    private void updateCameraModes() {
+    private void setDevices(List<CameraDevice> devices, boolean autoStart) {
+        String savedCamera = preferences.get(PREF_CAMERA, "");
+        updatingCameraModes = true;
+        try {
+            for (CameraDevice device : devices) {
+                cameras.addItem(device);
+                if (device.id().equals(savedCamera)) cameras.setSelectedItem(device);
+            }
+        } finally { updatingCameraModes = false; }
+        updateCameraModes(autoStart);
+    }
+
+    private void updateCameraModes(boolean autoStart) {
+        long request = ++cameraDiscovery;
         CameraDevice selected = (CameraDevice) cameras.getSelectedItem();
         updatingCameraModes = true;
         try {
             sizes.removeAllItems();
             frameRates.removeAllItems();
         } finally { updatingCameraModes = false; }
-        startCamera.setEnabled(false);
-        sizes.setEnabled(false);
-        frameRates.setEnabled(false);
+        updateCameraControls();
         if (selected == null) {
             cameraStatus.setText("No camera found.");
             return;
@@ -361,19 +389,24 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
         cameraStatus.setText("Reading Windows-supported formats for " + selected + "…");
         camera.findModes(selected,
                 modes -> SwingUtilities.invokeLater(() -> {
-                    if (cameras.getSelectedItem() != selected) return;
+                    if (request != cameraDiscovery) return;
                     updatingCameraModes = true;
                     try {
-                        for (Dimension size : selected.viewSizes()) sizes.addItem(size);
-                        sizes.setSelectedItem(selected.preferredViewSize());
+                        List<Dimension> available = selected.viewSizes();
+                        available.forEach(sizes::addItem);
+                        Dimension previous = new Dimension(preferences.getInt(PREF_WIDTH, 0),
+                                preferences.getInt(PREF_HEIGHT, 0));
+                        boolean usePrevious = selected.id().equals(preferences.get(PREF_CAMERA, ""))
+                                && available.contains(previous);
+                        sizes.setSelectedItem(usePrevious ? previous : selected.preferredViewSize());
                     } finally { updatingCameraModes = false; }
                     updateFrameRates();
-                    startCamera.setEnabled(sizes.getItemCount() > 0);
-                    sizes.setEnabled(true);
-                    cameraStatus.setText(modes.size() + " Windows-reported formats. Ready to start.");
+                    updateCameraControls();
+                    if (autoStart) startPreview(false);
+                    else cameraStatus.setText(modes.size() + " Windows-reported formats. Ready to start.");
                 }),
                 error -> SwingUtilities.invokeLater(() -> {
-                    if (cameras.getSelectedItem() != selected) return;
+                    if (request != cameraDiscovery) return;
                     cameraStatus.setText("Cannot read camera formats: " + error.getMessage()
                             + " Use Copy diagnostics for details.");
                 }));
@@ -431,19 +464,27 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     private void toggleCamera() {
         if (camera.isRunning()) {
             camera.stop();
-            startCamera.setText("Start camera");
-            cameraStatus.setText("Camera stopped");
-            return;
-        }
+            imagePanel.clearFrame();
+            updateCameraControls();
+        } else startPreview(true);
+    }
+
+    private void startPreview(boolean rememberSelection) {
+        if (closed || camera.isRunning()) return;
         CameraDevice selected = (CameraDevice) cameras.getSelectedItem();
-        if (selected == null) return;
+        Dimension size = (Dimension) sizes.getSelectedItem();
         Integer frameRate = (Integer) frameRates.getSelectedItem();
-        if (frameRate == null) return;
+        if (selected == null || size == null || frameRate == null) return;
         freeze.setSelected(false);
         imagePanel.setFrozen(false);
         imagePanel.clearFrame();
-        camera.start(selected, (Dimension) sizes.getSelectedItem(), frameRate, imagePanel::setFrame);
-        startCamera.setText("Stop camera");
+        if (rememberSelection) {
+            preferences.put(PREF_CAMERA, selected.id());
+            preferences.putInt(PREF_WIDTH, size.width);
+            preferences.putInt(PREF_HEIGHT, size.height);
+        }
+        camera.start(selected, size, frameRate, imagePanel::setFrame);
+        updateCameraControls();
     }
 
     private CameraOffset currentOffset() {
@@ -694,7 +735,10 @@ public final class CameraMonitorPanel extends JPanel implements AutoCloseable {
     @Override
     public void close() {
         closed = true;
+        cameraDiscovery++;
         if (recoveryDialog != null) recoveryDialog.requestClose();
         camera.close();
+        imagePanel.clearFrame();
+        updateCameraControls();
     }
 }

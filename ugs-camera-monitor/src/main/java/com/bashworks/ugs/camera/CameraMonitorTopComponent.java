@@ -51,6 +51,7 @@ public final class CameraMonitorTopComponent extends TopComponent implements UGS
         refreshTitle();
         backend.addUGSEventListener(this);
         panel.refreshMachineState();
+        panel.open();
     }
 
     @Override

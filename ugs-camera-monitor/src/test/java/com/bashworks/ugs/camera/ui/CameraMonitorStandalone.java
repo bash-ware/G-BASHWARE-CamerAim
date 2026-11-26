@@ -45,6 +45,7 @@ public final class CameraMonitorStandalone {
             frame.pack();
             frame.setLocationRelativeTo(null);
             frame.setVisible(true);
+            panel.open();
 
             // Optional screenshot argument: --screenshot <output_path>
             for (int i = 0; i < args.length; i++) {
